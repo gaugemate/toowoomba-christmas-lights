@@ -1,0 +1,48 @@
+rules_version = '2';
+// Database rules for Toowoomba Christmas Lights (Firebase Firestore).
+// - Anyone can see approved displays.
+// - Anyone can add a display, but only as "pending", and only with the expected fields and sizes.
+// - Only admins can see pending displays, approve them, or delete displays.
+// - Admins are listed in the "admins" collection: one document per admin, named with their user ID
+//   (shown on the app's #admin page after they sign in). Add those by hand in the Firebase console.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function str(v, max) { return v is string && v.size() <= max; }
+
+    function validNewDisplay(d) {
+      return d.keys().hasOnly(['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing',
+                               'from', 'until', 'hours', 'notes', 'status', 'createdAt'])
+        && d.keys().hasAll(['address', 'lat', 'lng', 'size', 'viewing', 'status', 'createdAt'])
+        && d.status == 'pending'
+        && d.createdAt == request.time
+        && str(d.address, 120) && d.address.size() > 0
+        && (!('suburb' in d) || str(d.suburb, 60))
+        && d.lat is number && d.lat > -28.5 && d.lat < -26.5
+        && d.lng is number && d.lng > 150.5 && d.lng < 153
+        && d.size is int && d.size >= 1 && d.size <= 4
+        && d.viewing in ['drive', 'walk']
+        && (!('features' in d) || (d.features is list && d.features.size() <= 6))
+        && (!('from' in d) || str(d.from, 10))
+        && (!('until' in d) || str(d.until, 10))
+        && (!('hours' in d) || str(d.hours, 30))
+        && (!('notes' in d) || str(d.notes, 200));
+    }
+
+    match /displays/{id} {
+      allow read: if resource.data.status == 'approved' || isAdmin();
+      allow create: if validNewDisplay(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
+    match /admins/{uid} {
+      // An admin check reads your own entry; nobody can add themselves from the app
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+  }
+}

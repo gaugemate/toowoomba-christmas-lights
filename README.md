@@ -10,3 +10,13 @@ A phone app (installable web app) that plans a drive past the best Christmas lig
 Settings live in `src/config.js`. Until Firebase settings are added there, the app runs on made-up sample displays.
 
 To try it locally, serve the folder with any static web server, e.g. `python3 -m http.server`, then open http://localhost:8000.
+
+## What's where
+
+| | |
+|---|---|
+| `index.html`, `src/` | The app itself. `src/config.js` holds the settings. |
+| `sw.js` | Service worker: lets the app install on a phone and open with no signal. Bump `VERSION` in it when you add or rename app files. |
+| `manifest.webmanifest`, `icons/` | Install name and icons. `icons/source/icon.svg` is the master the PNGs are drawn from. |
+| `firestore.rules` | Database rules for Firebase: anyone can add a display as "pending"; only admins approve, change or delete. |
+| `tests/` | Checks for the drive planner and turn-by-turn guide. Run `npm test` (Node 20 or newer, nothing to install). |
