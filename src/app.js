@@ -53,7 +53,9 @@ function fmtDur(min) {
 const fmtDurText = min => { min = Math.round(min); if (min < 60) return `${min} min`; const h = Math.floor(min / 60), m = min % 60; return m ? `${h} h ${pad(m)}` : `${h} h`; };
 const clock = addMin => new Date(Date.now() + addMin * 60000).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }).replace(/\s?([ap])\.?m\.?/i, ' $1m');
 
+function clearToasts() { $$('.toast').forEach(t => t.remove()); }
 function toast(msg) {
+  clearToasts();
   const t = document.createElement('div');
   t.className = 'toast'; t.textContent = msg; document.body.append(t);
   setTimeout(() => { t.style.opacity = '0'; }, 3200);
@@ -757,12 +759,10 @@ function renderAdd() {
   const v = $('#view-add'), A = state.add;
   if (A.done) {
     v.innerHTML = `
-      <div class="card"><h1>Thanks, you're on the list!</h1>
-        <p style="margin:0">We'll check your display and it'll show on the map soon. Merry Christmas!</p>
+      <div class="card"><h1>You've been added to the list!</h1>
+        <p style="margin:0">Please wait while an admin approves your display. It will show on the map once it's been checked. Merry Christmas!</p>
         ${state.store.mode === 'demo' ? '<p class="demo-note">Demo: your entry is waiting in Approvals on this phone only.</p>' : ''}
-        <button class="btn wide" type="button" id="another">Add another display</button>
       </div>`;
-    $('#another', v).onclick = () => { state.add = { place: null, size: 0, features: new Set(), viewing: 'drive', done: false }; renderAdd(); };
     return;
   }
   v.innerHTML = `
@@ -878,7 +878,7 @@ function renderAdd() {
         size: A.size, features: [...A.features], viewing: A.viewing, from, until,
         hours: `${$('#hFrom', v).value} – ${$('#hTo', v).value}`, notes: $('#notes', v).value
       });
-      A.done = true; renderAdd(); scrollTop();
+      A.done = true; clearToasts(); renderAdd(); scrollTop();
       popup(`<h2>Your address has been added to the map</h2>
         <p style="margin:0">It will show for everyone once it's been checked. Thanks for lighting up Toowoomba!</p>`,
         [{ id: 'ok', text: 'OK', cls: 'go' }]);
@@ -899,11 +899,15 @@ async function renderAdmin() {
       <div class="card"><p style="margin:0">Only the group's admins can approve displays.</p>
         ${me ? `<p class="note">You're signed in as ${esc(me.email)}, but you're not an admin yet. Your user ID is <b>${esc(me.uid)}</b>.</p>` : ''}
         <button class="btn primary wide" type="button" id="signIn">Sign in with Google</button></div>`;
-    $('#signIn', v).onclick = async () => { await S.signIn(); renderAdmin(); };
+    $('#signIn', v).onclick = async () => { await S.signIn(); refreshAdminTab(); renderAdmin(); };
     return;
   }
+  refreshAdminTab();
   const pending = await S.listPending();
   const link = location.origin + location.pathname + '#add';
+  const joined = d => { const c = d.createdAt, t = c?.toDate ? c.toDate() : typeof c === 'number' ? new Date(c) : c?.seconds ? new Date(c.seconds * 1000) : null;
+    return t ? 'Added ' + t.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : ''; };
+  const live = state.displays.slice().sort((a, b) => (b.createdAt?.seconds ?? b.createdAt ?? 0) - (a.createdAt?.seconds ?? a.createdAt ?? 0));
   v.innerHTML = `
     <h1>Approvals</h1>
     ${S.mode === 'demo' ? '<p class="demo-note">Demo mode: entries and approvals are kept on this phone only. Once the database is connected, everyone\'s entries land here.</p>' : ''}
@@ -912,13 +916,16 @@ async function renderAdmin() {
     <h2 class="on-page" style="color:#fff">Waiting for a check (${pending.length})</h2>
     ${pending.length ? pending.map(d => `
       <div class="card pending" data-id="${esc(d.id)}">
-        <div><b style="font-size:1.2rem">${esc(d.address)}</b><div class="muted" style="font-weight:600">${esc(d.suburb)}</div></div>
+        <div><b style="font-size:1.2rem">${esc(d.address)}</b><div class="muted" style="font-weight:600">${esc(d.suburb)}${joined(d) ? ' · ' + joined(d) : ''}</div></div>
         <p class="meta">${stars(d.size)} ${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'} · ${esc(d.hours)}<br>${esc(fmtDate(d.from))} to ${esc(fmtDate(d.until))}${(d.features || []).length ? '<br>' + d.features.map(f => esc(FEATURES[f] || f)).join(', ') : ''}${d.notes ? '<br>“' + esc(d.notes) + '”' : ''}</p>
         <a class="linkbtn" href="https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}" target="_blank" rel="noopener">Check the spot on Google Maps</a>
         <div class="row2"><button class="btn danger" type="button" data-act="reject">Reject</button><button class="btn go" type="button" data-act="approve" style="min-height:52px;font-size:1.05rem">Approve</button></div>
       </div>`).join('') : '<p class="note">Nothing waiting. New entries from the Add my lights page show up here.</p>'}
-    <h2 class="on-page" style="color:#fff">On the map (${state.displays.length})</h2>
-    <ul class="list" id="liveList">${state.displays.map(d => `<li><div class="lrow"><span><b>${esc(d.address)}</b><small>${esc(d.suburb)} · ${sizeName(d.size)}</small></span><button class="btn danger" style="min-height:44px" type="button" data-remove="${esc(d.id)}">Remove</button></div></li>`).join('')}</ul>`;
+    <h2 class="on-page" style="color:#fff">On the map (${live.length})</h2>
+    <p class="note on-page">Newest first. <b>Undo</b> moves a display back to “Waiting for a check”; <b>Remove</b> deletes it.</p>
+    <ul class="list" id="liveList">${live.map(d => `<li><div class="lrow"><span><b>${esc(d.address)}</b><small>${esc(d.suburb)} · ${sizeName(d.size)}${joined(d) ? ' · ' + joined(d) : ''}</small></span>
+      <span class="adminbtns">${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" style="min-height:44px" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" style="min-height:44px" type="button" data-remove="${esc(d.id)}">Remove</button></span></div></li>`).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
+    ${S.signOut ? '<button class="linkbtn on-page" type="button" id="signOut" style="color:#fff">Sign out of admin on this phone</button>' : ''}`;
   $('#copyLink', v).onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch (e) { $('#addLink', v).select(); toast('Select the link and copy it'); } };
   $$('.pending', v).forEach(c => c.onclick = async e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
@@ -931,10 +938,19 @@ async function renderAdmin() {
   });
   let armed = null;
   $('#liveList', v).onclick = async e => {
+    const u = e.target.closest('[data-undo]');
+    if (u) {
+      u.disabled = true;
+      try { await S.unapprove(u.dataset.undo); await loadDisplays(); renderAdmin(); toast('Moved back to waiting'); }
+      catch (ex) { u.disabled = false; toast("That didn't work. Try again."); }
+      return;
+    }
     const b = e.target.closest('[data-remove]'); if (!b) return;
     if (armed !== b) { armed = b; b.textContent = 'Tap again'; return; } // two taps, like GaugeMate's Leave
     await S.remove(b.dataset.remove); await loadDisplays(); renderAdmin(); toast('Removed from the map');
   };
+  const so = $('#signOut', v);
+  if (so) so.onclick = async () => { await S.signOut(); refreshAdminTab(); location.hash = 'plan'; toast('Signed out'); };
 }
 
 /* =================================================================== shell */
@@ -963,6 +979,14 @@ function show(tab) {
   scrollTop();
 }
 
+// Show the Admin menu button on phones signed in as an admin
+async function refreshAdminTab() {
+  let yes = false;
+  try { yes = state.store.mode !== 'offline' && await state.store.isAdmin(); } catch (e) { yes = false; }
+  $('#adminTab').hidden = !yes;
+  $('nav.tabs').classList.toggle('four', yes);
+}
+
 async function loadDisplays() {
   try { state.displays = await state.store.listApproved(); }
   catch (e) { console.error(e); state.displays = []; toast("Couldn't load the displays. Check your signal."); }
@@ -981,6 +1005,7 @@ async function start() {
   });
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
   show(location.hash.slice(1) || 'plan');
+  refreshAdminTab();
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     try { await navigator.serviceWorker.register('sw.js'); } catch (e) { /* preview pages can't use one */ }
   }

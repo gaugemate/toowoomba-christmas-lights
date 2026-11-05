@@ -138,6 +138,7 @@ input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-sea
 .overlay .popup{align-self:center;margin:0 14px;flex:1;width:auto;max-width:480px}
 .overlay .popup h2{font-size:1.4rem;line-height:1.2}
 .popbtns{display:flex;flex-direction:column;gap:10px}
+.adminbtns{display:flex;gap:8px;flex:none}
 .allhint{background:var(--pine-soft);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:.98rem;font-weight:500;line-height:1.45}
 .allhint b{font-weight:800}
 .allhint .linkbtn{display:block;padding:6px 0 0;min-height:40px;font-size:1rem}
@@ -206,6 +207,8 @@ nav.tabs{position:relative;flex:none;z-index:20;background:var(--page);display:g
 nav.tabs button{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:var(--nav-h);padding:8px 2px 4px;border:0;background:transparent;
   color:#bcd6c8;font-weight:600;font-size:.95rem;line-height:1.15;cursor:pointer;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
 nav.tabs svg{width:26px;height:26px}
+nav.tabs.four{grid-template-columns:repeat(4,1fr)}
+nav.tabs.four button{font-size:.8rem;white-space:nowrap;letter-spacing:-.01em}
 nav.tabs button[aria-selected="true"]{color:#fff;font-weight:700}
 nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:0;left:22%;right:22%;height:4px;background:var(--gold);border-radius:0 0 4px 4px}
 

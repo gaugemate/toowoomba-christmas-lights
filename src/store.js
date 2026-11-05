@@ -43,6 +43,7 @@ function demoStore() {
     async signIn() { return true; },
     async listPending() { return extra().filter(d => d.status === 'pending'); },
     async approve(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'approved' } : d))); },
+    async unapprove(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'pending' } : d))); },
     async reject(id) { save(extra().filter(d => d.id !== id)); },
     async remove(id) {
       if (id.startsWith('s')) { const g = removed(); g.add(id); LS.set('lm.demo.removed', [...g]); }
@@ -94,6 +95,8 @@ async function liveStore(cfg) {
     async whoAmI() { await authReady; return auth.currentUser ? { uid: auth.currentUser.uid, email: auth.currentUser.email } : null; },
     async listPending() { return rows(await fs.getDocs(fs.query(col, fs.where('status', '==', 'pending')))); },
     async approve(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'approved', approvedAt: fs.serverTimestamp() }); },
+    async unapprove(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'pending' }); },
+    async signOut() { await au.signOut(auth); },
     async reject(id) { await fs.deleteDoc(fs.doc(db, 'displays', id)); },
     async remove(id) { await fs.deleteDoc(fs.doc(db, 'displays', id)); }
   };
