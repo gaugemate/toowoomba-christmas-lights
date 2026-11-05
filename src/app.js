@@ -381,7 +381,7 @@ function renderRoute(v) {
     <div class="figs">
       <div class="fig"><div class="v">${r.count}</div><div class="s">Displays</div></div>
       <div class="fig"><div class="v">${fmtDur(r.totalMin)}</div><div class="s">All up</div></div>
-      <div class="fig"><div class="v">${clock(r.totalMin).replace(/ ([ap]m)$/, '<small>$1</small>')}</div><div class="s">${P.back ? 'Home by' : 'Done by'}</div></div>
+      <div class="fig"><div class="v">${clock(r.totalMin).replace(/ ([ap]m)$/, '<small>$1</small>')}</div><div class="s">${P.back ? 'Back by' : 'Done by'}</div></div>
     </div>
     <div class="map" id="planMap"></div>
     <button class="btn go wide" type="button" id="startDrive">${ICON.nav}Start the drive</button>
