@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Toowoomba Christmas Lights</title>
+<meta name="description" content="Plan a drive past the best Christmas light displays near you, in the time you have.">
+<meta name="theme-color" content="#0d3b2c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Xmas Lights">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+<div id="appShell">
+  <div id="scroller">
+    <main>
+      <header class="brand">
+        <div class="mark"><img src="icons/icon-192.png" alt=""><span class="wordmark"><small>Toowoomba</small>Christmas <b>Lights</b></span></div>
+        <span class="areachip" id="areaChip" hidden></span>
+      </header>
+      <section class="view" id="view-plan" hidden></section>
+      <section class="view" id="view-map" hidden></section>
+      <section class="view" id="view-add" hidden></section>
+      <section class="view" id="view-admin" hidden></section>
+    </main>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="plan" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/></svg>
+      Plan a drive</button>
+    <button role="tab" data-tab="map" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13M15 6.5v13"/></svg>
+      All lights</button>
+    <button role="tab" data-tab="add" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M12 12.5v5M9.5 15h5"/></svg>
+      Add my lights</button>
+  </nav>
+</div>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,223 @@
+/* Toowoomba Christmas Lights: same layout rules as GaugeMate (solid page colour, white boxes, near-black text, big bold numbers,
+   14px gaps, a bottom menu the same colour as the page), in Christmas colours: pine green page, gold buttons. */
+@font-face{font-family:'Inter Variable';src:url('../fonts/InterVariable.woff2') format('woff2');font-weight:100 900;font-display:swap}
+:root{
+  --page:#0d3b2c; --on-page:#ffffff; --on-page-2:#e1efe7;
+  --surface:#ffffff; --ink:#111111; --muted:#333333; --edge:#111111; --line:#8a96a3;
+  --pine:#0d3b2c; --pine-soft:#e4f1ea; --gold:#f6c543; --gold-deep:#b7860b; --red:#c62828; --red-soft:#fdecec;
+  --good:#13692f; --danger:#b3261e; --focus:#4fc3f7;
+  --r1:#c62828; --r2:#0b5a9c; --r3:#7b3fa0;
+  --f-body:'Inter Variable','Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --nav-h:58px; --nav-pad:max(6px, calc(env(safe-area-inset-bottom,0px) - 20px)); --gap:14px;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;height:100%;background:var(--page)}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+html,body,button,a,input,select,textarea,label{touch-action:manipulation}
+body{margin:0;background:var(--page);color:var(--on-page);font-family:var(--f-body);font-size:1.125rem;line-height:1.4;
+  font-feature-settings:"tnum" 1,"cv05" 1}
+#appShell{position:fixed;inset:0;height:var(--app-h,100%);display:flex;flex-direction:column;background:var(--page)}
+#scroller{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;
+  padding:calc(8px + env(safe-area-inset-top,0px)) max(var(--gap),env(safe-area-inset-right,0px)) 16px max(var(--gap),env(safe-area-inset-left,0px))}
+main{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:var(--gap)}
+.view{display:flex;flex-direction:column;gap:var(--gap)}
+h1{font-weight:800;font-size:1.6rem;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-weight:800;font-size:1.25rem;margin:0}
+.label{font-size:.875rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+.muted{color:var(--muted)}
+.note{font-size:.95rem;color:var(--muted);margin:0;font-weight:500}
+.view > .note,.on-page{color:var(--on-page-2);font-weight:500}
+.card{background:var(--surface);color:var(--ink);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+
+/* Brand bar */
+.brand{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px}
+.brand .mark{display:flex;align-items:center;gap:10px;min-width:0}
+.brand img{width:42px;height:42px;border-radius:10px;display:block;flex:none}
+.wordmark{font-weight:800;font-size:1.4rem;line-height:1.05;letter-spacing:-.02em;color:#fff;white-space:nowrap}
+.wordmark small{display:block;font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin-bottom:2px}
+.wordmark b{font-weight:800;color:var(--gold)}
+.areachip[hidden]{display:none}
+.areachip{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:6px 12px;border-radius:999px;background:var(--surface);color:var(--ink);font-weight:700;font-size:.95rem}
+.areachip svg{width:18px;height:18px;color:var(--red)}
+
+/* Buttons */
+button{font:inherit;color:inherit}
+.btn{min-height:52px;padding:10px 16px;border-radius:12px;border:2px solid var(--edge);background:var(--surface);color:var(--ink);font-weight:700;font-size:1.05rem;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;text-align:center}
+.btn.go{background:var(--gold);border-color:var(--gold);color:var(--pine);font-weight:800;font-size:1.2rem;min-height:60px}
+.btn.primary{background:var(--pine);border-color:var(--pine);color:#fff}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.wide{width:100%}
+.btn:disabled{opacity:.45;cursor:default}
+.btn svg{width:24px;height:24px;flex:none}
+.linkbtn{background:none;border:0;color:var(--pine);font-weight:700;font-size:1rem;padding:8px 0;cursor:pointer;text-decoration:underline;text-underline-offset:3px;min-height:44px}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.back{display:inline-flex;align-items:center;gap:6px;background:none;border:0;color:var(--on-page);font-weight:700;font-size:1.1rem;padding:8px 0;cursor:pointer;align-self:flex-start;min-height:44px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* Inputs */
+input[type=text],input[type=search],input[type=date],select,textarea{font:inherit;font-size:1.1rem;font-weight:500;min-height:54px;padding:10px 14px;border-radius:12px;border:2px solid var(--edge);background:var(--surface);color:var(--ink);width:100%;min-width:0}
+textarea{min-height:90px;resize:vertical}
+select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),linear-gradient(135deg,var(--ink) 50%,transparent 50%);background-position:calc(100% - 20px) 50%,calc(100% - 14px) 50%;background-size:6px 6px;background-repeat:no-repeat;padding-right:36px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field > label,.field > .flabel{font-weight:700;font-size:1.05rem}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.status{min-height:1.3em;font-size:1rem;font-weight:600;color:var(--muted);margin:0}
+.status:empty{display:none}
+.status.ok{color:var(--good)} .status.err{color:var(--danger)}
+.view > .status{color:var(--on-page-2)} .view > .status.err{color:#ffd2cc}
+
+/* Address search */
+.search{position:relative}
+.search .clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:42px;height:42px;border:0;background:none;color:var(--muted);font-size:1.6rem;cursor:pointer}
+.search input{padding-right:48px}
+input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
+.results{list-style:none;margin:6px 0 0;padding:0;border:2px solid var(--edge);border-radius:12px;overflow:hidden;background:var(--surface)}
+.results:empty{display:none}
+.results li + li{border-top:1px solid var(--line)}
+.results button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;min-height:58px;padding:10px 14px;border:0;background:none;text-align:left;cursor:pointer;color:var(--ink)}
+.results b{font-weight:700}
+.results small{color:var(--muted);font-size:.9rem;font-weight:500}
+.results .none{padding:12px 14px;color:var(--muted);font-size:1rem}
+.picked{display:flex;align-items:center;gap:10px;min-height:58px;padding:8px 8px 8px 12px;border:3px solid var(--pine);border-radius:12px;background:var(--pine-soft)}
+.picked svg{width:26px;height:26px;color:var(--red);flex:none}
+.picked div{flex:1;min-width:0}
+.picked b{display:block;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picked small{display:block;color:var(--muted);font-weight:500;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picked button{flex:none;min-height:44px;padding:6px 12px;border-radius:10px;border:2px solid var(--edge);background:var(--surface);font-weight:700;font-size:.95rem;cursor:pointer;color:var(--ink)}
+
+/* Chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:46px;padding:6px 14px;border-radius:999px;border:2px solid var(--edge);background:var(--surface);color:var(--ink);font-weight:700;font-size:1rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.chip small{font-weight:600;color:var(--muted);font-size:.9rem}
+.chip[aria-pressed="true"]{background:var(--pine);border-color:var(--pine);color:#fff}
+.chip[aria-pressed="true"] small{color:#cfe5d9}
+.chips.more .chip.extra{display:none}
+.chips.more.open .chip.extra{display:inline-flex}
+
+/* Big time picker (like GaugeMate's rain amount) */
+.timepick{display:flex;align-items:stretch;gap:10px}
+.step{flex:0 0 64px;min-height:84px;border-radius:12px;border:2px solid var(--edge);background:var(--surface);color:var(--ink);font-size:2.2rem;font-weight:700;cursor:pointer}
+.step:disabled{opacity:.35}
+.bigtime{flex:1;min-width:0;display:flex;align-items:baseline;justify-content:center;gap:4px;border:3px solid var(--gold);border-radius:12px;padding:6px;white-space:nowrap;font-size:3.4rem;overflow:hidden}
+.bigtime .big{font-size:1em;font-weight:800;line-height:1.1;letter-spacing:-.02em}
+.bigtime .u{font-size:.41em;font-weight:700;margin-right:8px}
+.bigtime .u:last-child{margin-right:0}
+.endtime{margin:0;text-align:center;font-weight:600;font-size:1.05rem;color:var(--ink)}
+.endtime b{font-weight:800}
+
+/* Segmented controls */
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;padding:4px;border-radius:14px;background:var(--surface);border:2px solid var(--edge)}
+.seg button{min-height:48px;border:0;border-radius:10px;background:none;font-weight:700;font-size:1rem;cursor:pointer;color:var(--ink);padding:4px 6px}
+.seg button[aria-pressed="true"]{background:var(--pine);color:#fff}
+
+/* Size picker rows (like GaugeMate's gauge list) */
+.picker{display:flex;flex-direction:column;gap:8px}
+.pick{display:flex;align-items:center;gap:12px;min-height:62px;padding:10px 14px;border:2px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);cursor:pointer;text-align:left;width:100%}
+.pick[aria-checked="true"]{border:3px solid var(--pine);background:var(--pine-soft)}
+.pick b{display:block;font-weight:800;font-size:1.1rem}
+.pick small{color:var(--muted);font-size:.95rem;font-weight:500}
+.pick .stars{margin-left:auto;color:var(--gold-deep);font-size:1.2rem;letter-spacing:1px;white-space:nowrap}
+.check{display:flex;gap:12px;align-items:flex-start;padding:12px;border:2px solid var(--edge);border-radius:12px;cursor:pointer;font-weight:600;font-size:1rem}
+.check input{width:28px;height:28px;flex:none;margin:0;accent-color:var(--pine)}
+
+/* Maps */
+.map{height:min(44vh,380px);border-radius:14px;overflow:hidden;background:#dfe7e3;border:0;z-index:0}
+.map.tall{height:min(56vh,520px)}
+.map.small{height:220px;border:2px solid var(--edge)}
+.leaflet-container{font-family:var(--f-body);background:#dfe7e3}
+.leaflet-control-attribution{font-size:10px}
+.pin{display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #111;color:#fff;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.pin.light{background:var(--gold);color:#111}
+.pin.off{background:#c9c9c9;color:#333}
+.pin.stop{background:var(--r1);font-size:13px}
+.pin.start{background:var(--pine);font-size:13px}
+.pin.home{background:var(--red)}
+
+/* Big figures */
+.figs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.fig{background:var(--surface);color:var(--ink);border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;min-width:0;border:2px solid #e1e5e8}
+.fig .v{font-size:min(2rem,8vw);font-weight:800;line-height:1.05;white-space:nowrap;font-variant-numeric:tabular-nums;max-width:100%;overflow:hidden}
+.fig .v small{font-size:.45em;font-weight:700;margin-left:2px}
+.fig .s{font-size:.85rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+
+/* Route option cards */
+.option{border-left:10px solid var(--r1)}
+.option.c2{border-left-color:var(--r2)} .option.c3{border-left-color:var(--r3)}
+.option[aria-current="true"]{outline:4px solid var(--gold);outline-offset:0}
+.option .sub{margin:0;color:var(--muted);font-size:.98rem;font-weight:500}
+.estimate{background:#fff7dd;color:#5b4300;border-radius:12px;padding:10px 14px;font-size:.95rem;font-weight:600;margin:0}
+
+/* Stop list */
+.stops{list-style:none;margin:0;padding:0;background:var(--surface);color:var(--ink);border-radius:14px;overflow:hidden}
+.stops li + li{border-top:1px solid var(--line)}
+.stopr{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:center;padding:12px 14px;min-height:64px}
+.num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:var(--r1);color:#fff;font-weight:800}
+.stopr b{display:block;font-weight:800}
+.stopr small{display:block;color:var(--muted);font-weight:500;font-size:.92rem}
+.stopr .t{font-weight:800;white-space:nowrap;text-align:right}
+.stopr .t small{font-weight:600}
+.legs{display:flex;flex-wrap:wrap;gap:8px}
+.legs .btn{flex:1 1 calc(50% - 4px);min-height:48px;font-size:.98rem}
+
+/* Drive mode */
+.drive{gap:16px}
+.drive .of{font-size:1.1rem;font-weight:700;color:var(--on-page-2);text-transform:uppercase;letter-spacing:.06em}
+.drive .where{font-size:2.1rem;font-weight:800;line-height:1.15;margin:0;text-wrap:balance}
+.drive .sz{display:flex;gap:8px;flex-wrap:wrap}
+.tag{display:inline-flex;align-items:center;min-height:34px;padding:4px 12px;border-radius:999px;background:var(--pine-soft);color:var(--pine);font-weight:700;font-size:.95rem}
+.tag.gold{background:#fff1c7;color:#6b4e00}
+.dots{display:flex;gap:6px;flex-wrap:wrap}
+.dots i{width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.3)}
+.dots i.done{background:var(--gold)} .dots i.now{background:#fff;outline:3px solid var(--gold)}
+
+/* Display list on the Map tab */
+.list{list-style:none;margin:0;padding:0;background:var(--surface);color:var(--ink);border-radius:14px;overflow:hidden}
+.list li + li{border-top:1px solid var(--line)}
+.list .lrow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:12px 14px;min-height:62px;width:100%;border:0;background:none;text-align:left;color:var(--ink);cursor:pointer}
+.list .lrow b{display:block;font-weight:800}
+.list .lrow small{display:block;color:var(--muted);font-size:.92rem;font-weight:500}
+.list .lrow .stars{color:var(--gold-deep);white-space:nowrap}
+.list .group{padding:10px 14px;background:#f1f4f2;font-weight:800;font-size:.95rem;text-transform:uppercase;letter-spacing:.05em}
+.sheet{position:relative}
+.sheet .x{position:absolute;right:10px;top:10px;width:44px;height:44px;border-radius:10px;border:2px solid var(--edge);background:var(--surface);font-size:1.4rem;cursor:pointer;color:var(--ink)}
+
+/* Approvals */
+.pending .meta{margin:0;color:var(--muted);font-weight:500}
+.demo-note{background:#fff1c7;color:#4d3800;border-radius:14px;padding:12px 14px;font-size:.98rem;font-weight:600;margin:0}
+
+/* Bottom menu: the same colour as the page, no line or shadow; selected tab white with a gold marker */
+nav.tabs{position:relative;flex:none;z-index:20;background:var(--page);display:grid;grid-template-columns:repeat(3,1fr);
+  padding-bottom:var(--nav-pad);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+nav.tabs button{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:var(--nav-h);padding:8px 2px 4px;border:0;background:transparent;
+  color:#bcd6c8;font-weight:600;font-size:.95rem;line-height:1.15;cursor:pointer;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
+nav.tabs svg{width:26px;height:26px}
+nav.tabs button[aria-selected="true"]{color:#fff;font-weight:700}
+nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:0;left:22%;right:22%;height:4px;background:var(--gold);border-radius:0 0 4px 4px}
+
+.toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + var(--nav-pad) + 12px);transform:translateX(-50%);z-index:50;background:#111;color:#fff;padding:12px 18px;border-radius:12px;font-weight:600;max-width:90vw;pointer-events:none;transition:opacity .4s}
+
+/* Guided drive: one big instruction at the top, readable at a glance in a car */
+.instr{display:flex;align-items:center;gap:14px;background:var(--surface);color:var(--ink);border-radius:14px;padding:14px 16px;min-height:112px;border:4px solid var(--surface)}
+.instr.soon{border-color:var(--gold);background:#fff8de}
+.arrowbox{flex:none;width:76px;height:76px;border-radius:14px;background:var(--pine);color:#fff;display:flex;align-items:center;justify-content:center}
+.arrowbox svg{width:54px;height:54px}
+.instr-txt{min-width:0;flex:1}
+.instr .dist{font-size:2.6rem;font-weight:800;line-height:1;white-space:nowrap}
+.instr .dist small{font-size:1.2rem;font-weight:700;margin-left:4px}
+.instr .what{font-size:1.3rem;font-weight:700;line-height:1.2;margin-top:4px;text-wrap:balance}
+.map.guide{height:min(36vh,330px)}
+.destcard{gap:2px;padding:12px 16px}
+.destcard .dest-name{font-size:1.25rem;font-weight:800}
+.destcard small{color:var(--muted);font-weight:600;font-size:1rem}
+#voiceBtn{min-height:48px;font-size:1rem}
+
+/* "You're here" pop-up */
+.overlay{position:fixed;inset:0;z-index:60;background:rgba(5,25,18,.72);display:flex;align-items:flex-end;justify-content:center;
+  padding:16px max(14px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(14px,env(safe-area-inset-left,0px));animation:fade .2s ease-out}
+.overlay .arrive{width:100%;max-width:520px;border:5px solid var(--gold);gap:14px;padding:20px 18px;animation:rise .25s ease-out}
+.overlay .arrive .where{font-size:2rem;margin:0;line-height:1.15}
+.overlay .arrive .sz{display:flex;gap:8px;flex-wrap:wrap}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes rise{from{transform:translateY(40px)}to{transform:none}}
