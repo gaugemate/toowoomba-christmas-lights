@@ -11,10 +11,15 @@ export const SIZES = {
   4: { label: 'Huge', hint: 'Worth the trip on its own', score: 5, view: 6 }
 };
 
+// Lights set to music play a song or two on a loop, so people stop for the whole show
+export const MUSIC_VIEW_MIN = 15;
+export const hasMusic = d => (d.features || []).includes('music');
+
 // Minutes spent looking at a display (slowing down, pulling over, or parking and walking)
 export function viewMinutes(d) {
   let m = (SIZES[d.size] || SIZES[2]).view;
   if (d.viewing === 'walk') m += 5;
+  if (hasMusic(d)) m = Math.max(m, MUSIC_VIEW_MIN);
   return m;
 }
 
@@ -231,6 +236,50 @@ function describe(o, displays, matrix, D, view, returnToStart, slow) {
     count: stops.length, totalMin: t, driveMin: drive, viewMin: t - drive, km: metres / 1000, backMin,
     estimated: !!matrix.estimated, slow
   };
+}
+
+/**
+ * Roughly how long it takes to see every display in a list: a sensible order (nearest next, then untangled),
+ * straight-line road estimates, and viewing time at each. start is optional; without it the drive starts at
+ * whichever display gives the shortest drive.
+ */
+export function tourMinutes({ start = null, displays, returnToStart = true, slow = 1.2 }) {
+  const n = displays.length;
+  if (!n) return { minutes: 0, driveMin: 0, viewMin: 0, count: 0 };
+  const pts = start ? [start, ...displays] : displays.slice();
+  const M = estimateMatrix(pts).durations.map(r => r.map(s => (s * slow) / 60));
+  const closed = !!start && returnToStart;
+  const length = t => {
+    let x = 0; for (let i = 1; i < t.length; i++) x += M[t[i - 1]][t[i]];
+    return x + (closed && t.length > 1 ? M[t[t.length - 1]][t[0]] : 0);
+  };
+  function nearestFrom(first) {
+    const left = new Set(pts.map((_, i) => i)); left.delete(first);
+    const t = [first];
+    while (left.size) {
+      const last = t[t.length - 1]; let best = -1;
+      for (const j of left) if (best < 0 || M[last][j] < M[last][best]) best = j;
+      t.push(best); left.delete(best);
+    }
+    return t;
+  }
+  function untangle(t) {
+    let improved = true, guard = 0;
+    while (improved && guard++ < 30) {
+      improved = false;
+      for (let i = 1; i < t.length - 1; i++) for (let k = i + 1; k < t.length; k++) {
+        const cand = t.slice(0, i).concat(t.slice(i, k + 1).reverse(), t.slice(k + 1));
+        if (length(cand) < length(t) - 1e-6) { t = cand; improved = true; }
+      }
+    }
+    return t;
+  }
+  const firsts = start ? [0] : pts.map((_, i) => i);
+  let best = null;
+  for (const f of firsts) { const t = untangle(nearestFrom(f)); if (!best || length(t) < length(best)) best = t; }
+  const driveMin = length(best);
+  const viewMin = displays.reduce((a, d) => a + viewMinutes(d), 0);
+  return { minutes: driveMin + viewMin, driveMin, viewMin, count: n };
 }
 
 // Displays you could reach and get back from at all within the time, best first; caps the list for the

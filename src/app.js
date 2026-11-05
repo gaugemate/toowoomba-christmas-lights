@@ -1,6 +1,6 @@
 // Toowoomba Christmas Lights app: Plan a drive, All lights, Add my lights, and Approvals (#admin, not on the menu).
 import { CONFIG } from './config.js';
-import { SIZES, planRoutes, shortlist } from './planner.js';
+import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN } from './planner.js';
 import * as svc from './services.js';
 import { openStore } from './store.js';
 import { Guide, fmtDist, metres, bearingWords } from './guide.js';
@@ -23,6 +23,7 @@ const FEATURES = {
 };
 const HOURS_FROM = ['Dusk', '6pm', '6:30pm', '7pm', '7:30pm', '8pm', '8:30pm', '9pm'];
 const HOURS_TO = ['9pm', '9:30pm', '10pm', '10:30pm', '11pm', 'Midnight', 'Late'];
+const MAX_MIN = 300; // longest drive you can ask for (5 hours)
 const ROUTE_COLOURS = ['#c62828', '#0b5a9c', '#7b3fa0'];
 
 const state = {
@@ -77,7 +78,14 @@ function suburbCentres() {
 function makeMap(el, { zoom = CONFIG.zoom, center = CONFIG.center } = {}) {
   const map = L.map(el, { zoomControl: false, attributionControl: true }).setView(center, zoom);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-  L.tileLayer(CONFIG.tiles.url + (CONFIG.cartoKey ? `?key=${encodeURIComponent(CONFIG.cartoKey)}` : ''), { attribution: CONFIG.tiles.attribution, subdomains: CONFIG.tiles.subdomains, maxZoom: CONFIG.tiles.maxZoom }).addTo(map);
+  const tiles = L.tileLayer(CONFIG.tiles.url + (CONFIG.cartoKey ? `?key=${encodeURIComponent(CONFIG.cartoKey)}` : ''), { attribution: CONFIG.tiles.attribution, subdomains: CONFIG.tiles.subdomains, maxZoom: CONFIG.tiles.maxZoom }).addTo(map);
+  // If the street pictures can't load (no signal, or a page that blocks them), say so rather than show a blank map
+  let failed = 0, loaded = 0;
+  tiles.on('tileload', () => { loaded++; el.querySelector('.tilenote')?.remove(); });
+  tiles.on('tileerror', () => {
+    if (++failed < 3 || loaded || el.querySelector('.tilenote')) return;
+    el.insertAdjacentHTML('beforeend', '<div class="tilenote">The street map can\'t load right now (check your signal). The lights and directions still work.</div>');
+  });
   setTimeout(() => map.invalidateSize(), 50);
   return map;
 }
@@ -162,6 +170,7 @@ function renderPlan() {
         <button class="step" type="button" id="more" aria-label="More time">+</button>
       </div>
       <p class="endtime" id="endTime"></p>
+      <div class="allhint" id="allHint" role="status" hidden></div>
       <div class="seg" role="group" aria-label="Where to finish">
         <button type="button" data-back="1" aria-pressed="${P.back}">Finish back here</button>
         <button type="button" data-back="0" aria-pressed="${!P.back}">Finish anywhere</button>
@@ -171,8 +180,10 @@ function renderPlan() {
     <p class="status" id="planStatus" role="status"></p>
     ${preSeason() ? '<p class="note">The lights season hasn\'t started yet, so drives use every display on the list.</p>' : ''}`;
 
+  let drawHint = () => {}; // filled in below, once the time box exists
   const startBox = $('#startBox', v);
   const drawStart = () => {
+    drawHint();
     if (P.start) {
       startBox.innerHTML = pickedHTML(P.start);
       $('[data-act=change]', startBox).onclick = () => { P.start = null; drawStart(); };
@@ -190,6 +201,7 @@ function renderPlan() {
     const s = b.dataset.sub;
     if (!s) P.suburbs.clear(); else if (P.suburbs.has(s)) P.suburbs.delete(s); else P.suburbs.add(s);
     $$('[data-sub]', v).forEach(c => c.setAttribute('aria-pressed', c.dataset.sub ? P.suburbs.has(c.dataset.sub) : P.suburbs.size === 0));
+    drawHint();
   };
   const more = $('#moreSubs', v);
   if (more) more.onclick = () => { const c = $('#subChips', v); c.classList.toggle('open'); more.textContent = c.classList.contains('open') ? 'Show fewer' : 'Show all suburbs'; };
@@ -197,11 +209,33 @@ function renderPlan() {
   const drawTime = () => {
     const h = Math.floor(P.minutes / 60), m = P.minutes % 60;
     $('#bigTime', v).innerHTML = (h ? `<span class="big">${h}</span><span class="u">h</span>` : '') + (m || !h ? `<span class="big">${h ? pad(m) : m}</span><span class="u">min</span>` : '');
-    $('#endTime', v).innerHTML = P.back ? `Home by about <b>${clock(P.minutes)}</b> if you leave now` : `Finished by about <b>${clock(P.minutes)}</b> if you leave now`;
-    $('#less', v).disabled = P.minutes <= 30; $('#more', v).disabled = P.minutes >= 300;
+    $('#endTime', v).innerHTML = P.back ? `Back where you started by about <b>${clock(P.minutes)}</b> if you leave now` : `Finished by about <b>${clock(P.minutes)}</b> if you leave now`;
+    $('#less', v).disabled = P.minutes <= 30; $('#more', v).disabled = P.minutes >= MAX_MIN;
+    drawHint();
+  };
+  // With suburbs picked: how long it would take to see every display in them
+  drawHint = () => {
+    const box = $('#allHint', v);
+    if (!P.suburbs.size) { box.hidden = true; return; }
+    const pool = (preSeason() ? state.displays : state.displays.filter(litTonight)).filter(d => P.suburbs.has(d.suburb));
+    if (!pool.length) { box.hidden = false; box.innerHTML = 'No displays are on tonight in the suburbs you picked.'; return; }
+    const t = tourMinutes({ start: P.start, displays: pool, returnToStart: P.back, slow: CONFIG.slowDriving });
+    const need = Math.ceil(t.minutes / 15) * 15;
+    const music = pool.filter(hasMusic).length;
+    const subs = [...P.suburbs];
+    const where = subs.length === 1 ? subs[0] : subs.length === 2 ? subs.join(' and ') : `those ${subs.length} suburbs`;
+    const what = pool.length === 1 ? 'the 1 display' : `all ${pool.length} displays`;
+    box.hidden = false;
+    box.innerHTML = `To see ${what} in ${esc(where)} takes about <b>${fmtDurText(need)}</b>` +
+      `${P.start ? (P.back ? ', there and back' : ' from your start') : ''}.` +
+      (music ? ` That allows ${MUSIC_VIEW_MIN} minutes at ${music === 1 ? 'the display' : `each of the ${music} displays`} with lights to music.` : '') +
+      (need === P.minutes ? '' : need <= MAX_MIN ? ` <button class="linkbtn" type="button" id="useAll">Set ${fmtDurText(need)}</button>`
+        : ` That's more than ${MAX_MIN / 60} hours, so your drive will pick the best ones.`);
+    const use = $('#useAll', box);
+    if (use) use.onclick = () => { P.minutes = need; drawTime(); };
   };
   $('#less', v).onclick = () => { P.minutes = Math.max(30, P.minutes - 15); drawTime(); };
-  $('#more', v).onclick = () => { P.minutes = Math.min(300, P.minutes + 15); drawTime(); };
+  $('#more', v).onclick = () => { P.minutes = Math.min(MAX_MIN, P.minutes + 15); drawTime(); };
   $$('[data-back]', v).forEach(b => b.onclick = () => { P.back = b.dataset.back === '1'; $$('[data-back]', v).forEach(x => x.setAttribute('aria-pressed', x === b)); drawTime(); });
   drawTime();
 

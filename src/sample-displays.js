@@ -8,7 +8,9 @@ export const SAMPLE_DISPLAYS = [
   "lat": -27.56518,
   "lng": 151.96059,
   "size": 2,
-  "features": [],
+  "features": [
+   "music"
+  ],
   "viewing": "drive",
   "from": "2026-12-01",
   "until": "2027-01-01",
@@ -211,7 +213,9 @@ export const SAMPLE_DISPLAYS = [
   "lat": -27.57611,
   "lng": 151.98075,
   "size": 2,
-  "features": [],
+  "features": [
+   "music"
+  ],
   "viewing": "drive",
   "from": "2026-12-01",
   "until": "2027-01-01",
@@ -449,7 +453,9 @@ export const SAMPLE_DISPLAYS = [
   "lat": -27.61016,
   "lng": 151.94218,
   "size": 3,
-  "features": [],
+  "features": [
+   "music"
+  ],
   "viewing": "drive",
   "from": "2026-12-01",
   "until": "2027-01-01",
@@ -714,7 +720,9 @@ export const SAMPLE_DISPLAYS = [
   "lat": -27.53877,
   "lng": 151.93475,
   "size": 3,
-  "features": [],
+  "features": [
+   "music"
+  ],
   "viewing": "drive",
   "from": "2026-12-01",
   "until": "2027-01-01",
@@ -832,7 +840,8 @@ export const SAMPLE_DISPLAYS = [
   "lng": 151.95552,
   "size": 2,
   "features": [
-   "charity"
+   "charity",
+   "music"
   ],
   "viewing": "drive",
   "from": "2026-12-01",

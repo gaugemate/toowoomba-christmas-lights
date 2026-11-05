@@ -1,7 +1,7 @@
 // Run with: npm test   (needs Node 20 or newer; nothing to install)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planRoutes, estimateMatrix, shortlist, viewMinutes, haversineKm } from '../src/planner.js';
+import { planRoutes, estimateMatrix, shortlist, viewMinutes, haversineKm, tourMinutes, MUSIC_VIEW_MIN } from '../src/planner.js';
 import { SAMPLE_DISPLAYS } from '../src/sample-displays.js';
 
 const START = { lat: -27.5606, lng: 151.9539 }; // Toowoomba city centre
@@ -94,4 +94,26 @@ test('shortlist leaves out displays too far to reach', () => {
   const list = shortlist(START, SAMPLE_DISPLAYS, 15);
   assert.ok(!list.some(d => d.suburb === 'Highfields' || d.suburb === 'Westbrook'));
   assert.ok(list.length > 0);
+});
+
+test('displays with lights to music get 15 minutes', () => {
+  assert.equal(MUSIC_VIEW_MIN, 15);
+  assert.equal(viewMinutes({ size: 1, features: ['music'] }), 15);
+  assert.equal(viewMinutes({ size: 4, features: ['music'], viewing: 'walk' }), 15);
+  assert.ok(viewMinutes({ size: 1, features: [] }) < 15);
+});
+
+test('time to see every display in a suburb', () => {
+  const range = SAMPLE_DISPLAYS.filter(d => d.suburb === 'Rangeville');
+  const view = range.reduce((a, d) => a + viewMinutes(d), 0);
+  const noStart = tourMinutes({ displays: range });
+  assert.ok(noStart.minutes > view && noStart.minutes < view + 30, `Rangeville took ${noStart.minutes} min`);
+  const fromCity = tourMinutes({ start: START, displays: range, returnToStart: true });
+  const oneWay = tourMinutes({ start: START, displays: range, returnToStart: false });
+  assert.ok(fromCity.minutes > oneWay.minutes && oneWay.minutes > noStart.minutes - 1e-6);
+  assert.equal(tourMinutes({ displays: [] }).minutes, 0);
+  // A planned drive given that much time should fit them all in
+  const matrix = estimateMatrix([START, ...range]);
+  const most = planRoutes({ displays: range, matrix, budgetMin: Math.ceil(fromCity.minutes) + 1, returnToStart: true })[0];
+  assert.equal(most.count, range.length);
 });
