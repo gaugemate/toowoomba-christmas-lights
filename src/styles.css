@@ -202,14 +202,14 @@ input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-sea
 
 /* Bottom menu: the same colour as the page, no line or shadow; selected tab white with a gold marker */
 nav.tabs{position:relative;flex:none;z-index:20;background:var(--page);display:grid;grid-template-columns:repeat(3,1fr);
-  padding-bottom:var(--nav-pad);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+  padding-bottom:calc(var(--nav-pad) + var(--overlay-gap,0px));padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
 nav.tabs button{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:var(--nav-h);padding:8px 2px 4px;border:0;background:transparent;
   color:#bcd6c8;font-weight:600;font-size:.95rem;line-height:1.15;cursor:pointer;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
 nav.tabs svg{width:26px;height:26px}
 nav.tabs button[aria-selected="true"]{color:#fff;font-weight:700}
 nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:0;left:22%;right:22%;height:4px;background:var(--gold);border-radius:0 0 4px 4px}
 
-.toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + var(--nav-pad) + 12px);transform:translateX(-50%);z-index:50;background:#111;color:#fff;padding:12px 18px;border-radius:12px;font-weight:600;max-width:90vw;pointer-events:none;transition:opacity .4s}
+.toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + var(--nav-pad) + var(--overlay-gap,0px) + 12px);transform:translateX(-50%);z-index:50;background:#111;color:#fff;padding:12px 18px;border-radius:12px;font-weight:600;max-width:90vw;pointer-events:none;transition:opacity .4s}
 
 /* Guided drive: one big instruction at the top, readable at a glance in a car */
 .instr{display:flex;align-items:center;gap:14px;background:var(--surface);color:var(--ink);border-radius:14px;padding:14px 16px;min-height:112px;border:4px solid var(--surface)}

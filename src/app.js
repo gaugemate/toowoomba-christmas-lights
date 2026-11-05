@@ -929,10 +929,34 @@ async function loadDisplays() {
   catch (e) { console.error(e); state.displays = []; toast("Couldn't load the displays. Check your signal."); }
 }
 
+// Some hosts float their own button over the bottom of the page (e.g. "Powered by Netlify"), which would sit on
+// top of the menu. Find anything like that and leave room for it under the menu, so both can be seen and tapped.
+function makeRoomForOverlays() {
+  const shell = $('#appShell'), h = window.innerHeight, w = window.innerWidth;
+  const ours = el => !el || el === document.documentElement || el === document.body || shell.contains(el) ||
+    !!el.closest?.('.overlay, .toast') || /^(SCRIPT|STYLE|LINK|NOSCRIPT)$/.test(el.tagName);
+  const topOf = el => { while (el.parentElement && el.parentElement !== document.body && el.parentElement !== document.documentElement) el = el.parentElement; return el; };
+  let gap = 0;
+  const consider = el => {
+    if (ours(el)) return;
+    const r = topOf(el).getBoundingClientRect();
+    if (r.height > 0 && r.height < 200 && r.bottom > h - 160) gap = Math.max(gap, h - r.top);
+  };
+  for (const [x, y] of [[w - 12, h - 12], [w - 60, h - 24], [w / 2, h - 12], [12, h - 12], [w - 12, h - 50]]) consider(document.elementFromPoint(x, y));
+  for (const el of [...document.body.children, ...document.documentElement.children]) {
+    if (ours(el)) continue;
+    const cs = getComputedStyle(el);
+    if ((cs.position === 'fixed' || cs.position === 'sticky') && cs.display !== 'none' && cs.visibility !== 'hidden') consider(el);
+  }
+  const now = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--overlay-gap')) || 0;
+  if (gap > now) document.documentElement.style.setProperty('--overlay-gap', Math.min(Math.ceil(gap) + 6, 120) + 'px');
+}
+
 function sizeApp() { document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); }
 
 async function start() {
-  sizeApp(); window.addEventListener('resize', sizeApp);
+  sizeApp(); window.addEventListener('resize', () => { sizeApp(); makeRoomForOverlays(); });
+  for (const ms of [300, 1500, 4000, 8000]) setTimeout(makeRoomForOverlays, ms); // host buttons can appear a moment after the page
   $('#areaChip').innerHTML = `${ICON.pin}${esc(CONFIG.area)}`;
   state.store = await openStore();
   await loadDisplays();
