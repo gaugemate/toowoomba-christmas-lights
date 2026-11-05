@@ -1,10 +1,10 @@
 /* Toowoomba Christmas Lights: same layout rules as GaugeMate (solid page colour, white boxes, near-black text, big bold numbers,
-   14px gaps, a bottom menu the same colour as the page), in Christmas colours: pine green page, gold buttons. */
+   14px gaps, a bottom menu the same colour as the page), in Christmas colours: Christmas-tree green page (#165b33), gold buttons. */
 @font-face{font-family:'Inter Variable';src:url('../fonts/InterVariable.woff2') format('woff2');font-weight:100 900;font-display:swap}
 :root{
-  --page:#0d3b2c; --on-page:#ffffff; --on-page-2:#e1efe7;
+  --page:#165b33; --on-page:#ffffff; --on-page-2:#e1efe7;
   --surface:#ffffff; --ink:#111111; --muted:#333333; --edge:#111111; --line:#8a96a3;
-  --pine:#0d3b2c; --pine-soft:#e4f1ea; --gold:#f6c543; --gold-deep:#b7860b; --red:#c62828; --red-soft:#fdecec;
+  --pine:#165b33; --pine-soft:#e4f1ea; --gold:#f6c543; --gold-deep:#b7860b; --red:#c62828; --red-soft:#fdecec;
   --good:#13692f; --danger:#b3261e; --focus:#4fc3f7;
   --r1:#c62828; --r2:#0b5a9c; --r3:#7b3fa0;
   --f-body:'Inter Variable','Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;

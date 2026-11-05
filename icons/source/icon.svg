@@ -12,7 +12,7 @@
       <stop offset="1" stop-color="#c22a29"/>
     </radialGradient>
   </defs>
-  <rect width="192" height="192" fill="#0d3b2c"/>
+  <rect width="192" height="192" fill="#165b33"/>
   <circle cx="96" cy="122" r="80" fill="url(#glow)"/>
   <path d="M14 46 Q96 72 178 46" fill="none" stroke="#b6cac1" stroke-width="3" stroke-linecap="round"/>
   <circle cx="35" cy="57" r="6.5" fill="#4fc3f7"/>
