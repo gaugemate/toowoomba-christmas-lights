@@ -124,22 +124,40 @@ function addressBox(host, { placeholder, onPick, onClear }) {
       ? items.map((p, i) => `<li><button type="button" data-i="${i}"><b>${esc(p.title)}</b><small>${esc(p.line2)}</small></button></li>`).join('')
       : `<li class="none">${offline ? "Address search isn't working right now. Try a suburb name." : 'No matches yet. Keep typing the street name.'}</li>`;
   };
+  const search = async q => {
+    if (ctl) ctl.abort();
+    ctl = new AbortController();
+    const local = suburbCentres().filter(s => s.title.toLowerCase().includes(q.toLowerCase()));
+    try {
+      const found = await svc.searchAddress(q, ctl.signal);
+      if (input.value.trim() === q) show(found.length ? found : local);
+    } catch (e) {
+      if (e.name !== 'AbortError' && input.value.trim() === q) show(local, true);
+    }
+  };
   input.addEventListener('input', () => {
     const q = input.value.trim();
     clear.hidden = !q;
     clearTimeout(timer);
     if (ctl) ctl.abort();
     if (q.length < 3) { list.innerHTML = ''; return; }
-    timer = setTimeout(async () => {
-      ctl = new AbortController();
-      const local = suburbCentres().filter(s => s.title.toLowerCase().includes(q.toLowerCase()));
-      try {
-        const found = await svc.searchAddress(q, ctl.signal);
-        if (input.value.trim() === q) show(found.length ? found : local);
-      } catch (e) {
-        if (e.name !== 'AbortError' && input.value.trim() === q) show(local, true);
-      }
-    }, 280);
+    // Show straight away that it's looking, so nobody thinks they need to press Enter
+    if (!list.querySelector('button')) list.innerHTML = '<li class="none searching">Searching…</li>';
+    timer = setTimeout(() => search(q), 200);
+  });
+  // Enter / Search on the keyboard: search now instead of waiting
+  input.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const q = input.value.trim();
+    if (q.length >= 2) { clearTimeout(timer); search(q); }
+  });
+  // Bring the box near the top when typing starts, so the suggestions aren't hidden behind the phone's keyboard
+  input.addEventListener('focus', () => {
+    setTimeout(() => {
+      const sc = $('#scroller'), top = input.getBoundingClientRect().top;
+      if (top > 110) sc.scrollTo({ top: sc.scrollTop + top - 90, behavior: 'smooth' });
+    }, 300);
   });
   list.addEventListener('click', e => {
     const b = e.target.closest('button[data-i]'); if (!b) return;
