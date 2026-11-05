@@ -27,7 +27,8 @@ function placeFromPhoton(f) {
   const suburb = p.district || p.locality || (p.city !== title ? p.city : '') || '';
   const line2 = [title !== street ? street : '', suburb, p.state === 'Queensland' ? 'QLD' : p.state, p.postcode]
     .filter(Boolean).join(', ');
-  return { title, line2, suburb, lat, lng, hasNumber: !!p.housenumber };
+  const isStreet = p.type === 'street' || p.osm_key === 'highway';
+  return { title, line2, suburb, lat, lng, hasNumber: !!p.housenumber, isStreet };
 }
 
 // Address search as you type, biased to the town

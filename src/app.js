@@ -113,15 +113,22 @@ function pinIcon(cls, size, text = '') {
 const lightIcon = d => pinIcon(litTonight(d) || preSeason() ? 'light' : 'off', 12 + d.size * 3);
 
 /* ---------- address search box ---------- */
+// "12 Ruthven St" → "12"; "3/45 Bob St" → "3/45"; "12a Bob St" → "12a"
+const leadingNumber = q => (String(q || '').match(/^\s*(\d+[a-z]?(?:\s*\/\s*\d+[a-z]?)?)\s+\S/i) || [])[1]?.replace(/\s+/g, '') || '';
+const withoutNumber = q => String(q || '').replace(/^\s*\d+[a-z]?(?:\s*\/\s*\d+[a-z]?)?\s+/i, '');
+
 function addressBox(host, { placeholder, onPick, onClear }) {
   host.innerHTML = `<div class="search"><input type="search" enterkeyhint="search" autocomplete="off" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}">
     <button class="clear" type="button" aria-label="Clear" hidden>×</button></div><ul class="results" role="listbox"></ul>`;
   const input = $('input', host), list = $('.results', host), clear = $('.clear', host);
   let timer = 0, ctl = null, results = [];
   const show = (items, offline) => {
-    results = items;
-    list.innerHTML = items.length
-      ? items.map((p, i) => `<li><button type="button" data-i="${i}"><b>${esc(p.title)}</b><small>${esc(p.line2)}</small></button></li>`).join('')
+    // The map knows few house numbers: keep the one that was typed, e.g. "12 Ruthven" → "12 Ruthven Street"
+    const num = leadingNumber(input.value);
+    results = items.map(p => (num && !p.hasNumber && (p.isStreet || /street|st\b|road|rd\b|avenue|ave\b|drive|dr\b|court|ct\b|crescent|cres|place|pl\b|close|parade|terrace|way|lane|circuit|boulevard|grove|highway|esplanade/i.test(p.title)))
+      ? { ...p, title: `${num} ${p.title}`, hasNumber: true, typedNumber: true } : p);
+    list.innerHTML = results.length
+      ? results.map((p, i) => `<li><button type="button" data-i="${i}"><b>${esc(p.title)}</b><small>${esc(p.line2)}</small></button></li>`).join('')
       : `<li class="none">${offline ? "Address search isn't working right now. Try a suburb name." : 'No matches yet. Keep typing the street name.'}</li>`;
   };
   const search = async q => {
@@ -129,7 +136,9 @@ function addressBox(host, { placeholder, onPick, onClear }) {
     ctl = new AbortController();
     const local = suburbCentres().filter(s => s.title.toLowerCase().includes(q.toLowerCase()));
     try {
-      const found = await svc.searchAddress(q, ctl.signal);
+      let found = await svc.searchAddress(q, ctl.signal);
+      // The map knows few house numbers, so if "12 Bob St" finds nothing, look for "Bob St"
+      if (!found.length && leadingNumber(q)) found = await svc.searchAddress(withoutNumber(q), ctl.signal);
       if (input.value.trim() === q) show(found.length ? found : local);
     } catch (e) {
       if (e.name !== 'AbortError' && input.value.trim() === q) show(local, true);
@@ -820,10 +829,20 @@ function renderAdd() {
         pin.on('dragend', () => { const ll = pin.getLatLng(); A.place.lat = ll.lat; A.place.lng = ll.lng; });
       } else { pinMap.setView([A.place.lat, A.place.lng], 18); pin.setLatLng([A.place.lat, A.place.lng]); setTimeout(() => pinMap.invalidateSize(), 50); }
     } else {
-      addressBox(box, { placeholder: 'Start typing your address', onPick: p => {
+      addressBox(box, { placeholder: 'Your house number and street, e.g. 12 Ruthven St', onPick: p => {
+        if (!p.hasNumber) {
+          // A street with no number: ask again, with the number in front
+          drawAddr();
+          const s = $('#addStatus', v); s.className = 'status err';
+          s.textContent = `Please type your house number first, e.g. "12 ${p.title}".`;
+          toast(`Type your house number first, e.g. 12 ${p.title}`);
+          const inp = $('#addrBox input', v); inp.value = ` ${p.title}`; inp.focus(); inp.setSelectionRange(0, 0);
+          return;
+        }
+        $('#addStatus', v).textContent = '';
         A.place = { ...p };
         drawAddr();
-        if (!p.hasNumber) toast('Check the house number, then drag the dot onto your house');
+        if (p.typedNumber) toast('Now drag the dot onto your house');
       } });
     }
   };
@@ -931,6 +950,7 @@ function fitNumbers(root = document) {
 new MutationObserver(() => requestAnimationFrame(() => fitNumbers())).observe(document.querySelector('main'), { childList: true, subtree: true });
 
 function show(tab) {
+  closePopup();
   if (!['plan', 'map', 'add', 'admin'].includes(tab)) tab = 'plan';
   state.tab = tab;
   for (const t of ['plan', 'map', 'add', 'admin']) $(`#view-${t}`).hidden = t !== tab;
