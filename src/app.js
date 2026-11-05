@@ -74,6 +74,24 @@ function suburbCentres() {
   return [...m.entries()].map(([name, s]) => ({ title: name, line2: `Middle of ${name}`, suburb: name, lat: s.lat / s.n, lng: s.lng / s.n }));
 }
 
+// "Rangeville", "Rangeville and Highfields", "those 3 suburbs"
+function suburbsLabel(set) {
+  const s = [...set];
+  return s.length === 1 ? s[0] : s.length === 2 ? s.join(' and ') : `those ${s.length} suburbs`;
+}
+
+// A pop-up box over the page. buttons: [{ id, text, cls }]; each closes the pop-up, then runs onButton(id)
+function popup(html, buttons, onButton = () => {}) {
+  closePopup();
+  const o = document.createElement('div');
+  o.id = 'popup'; o.className = 'overlay'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true');
+  o.innerHTML = `<div class="card arrive popup">${html}<div class="popbtns">${buttons.map(b => `<button class="btn wide ${b.cls || ''}" type="button" data-pop="${b.id}">${b.text}</button>`).join('')}</div></div>`;
+  document.body.append(o);
+  o.addEventListener('click', e => { const b = e.target.closest('[data-pop]'); if (b) { closePopup(); onButton(b.dataset.pop); } });
+  $('[data-pop]', o).focus();
+}
+function closePopup() { const o = $('#popup'); if (o) o.remove(); }
+
 /* ---------- maps ---------- */
 function makeMap(el, { zoom = CONFIG.zoom, center = CONFIG.center } = {}) {
   const map = L.map(el, { zoomControl: false, attributionControl: true }).setView(center, zoom);
@@ -222,8 +240,7 @@ function renderPlan() {
     const t = tourMinutes({ start: P.start, displays: pool, returnToStart: P.back, slow: CONFIG.slowDriving });
     const need = Math.ceil(t.minutes / 15) * 15;
     const music = pool.filter(hasMusic).length;
-    const subs = [...P.suburbs];
-    const where = subs.length === 1 ? subs[0] : subs.length === 2 ? subs.join(' and ') : `those ${subs.length} suburbs`;
+    const where = suburbsLabel(P.suburbs);
     const what = pool.length === 1 ? 'the 1 display' : `all ${pool.length} displays`;
     box.hidden = false;
     box.innerHTML = `To see ${what} in ${esc(where)} takes about <b>${fmtDurText(need)}</b>` +
@@ -272,7 +289,7 @@ async function findDrives() {
   const routes = planRoutes({ displays: list, matrix, budgetMin: P.minutes, returnToStart: P.back, slow: CONFIG.slowDriving });
   btn.disabled = false; status.textContent = '';
   if (!routes.length) { status.className = 'status err'; status.textContent = 'Nothing fits in that time. Try a little longer.'; return; }
-  P.routes = routes; P.chosen = 0; P.lines = []; P.step = 'results';
+  P.routes = routes; P.chosen = 0; P.lines = []; P.step = 'results'; P.pool = pool; P.allMin = null;
   renderPlan(); scrollTop();
   // Road lines arrive a moment later and are drawn when ready
   routes.forEach((r, i) => {
@@ -306,6 +323,22 @@ function fitTo(map, pts) {
   map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])).pad(0.12), { animate: false });
 }
 
+// "6 of the 11 displays in Rangeville and Highfields. The other 5 need about another 1 h 30."
+function coverageLine(r) {
+  const P = state.plan, pool = P.pool || [];
+  if (!pool.length) return '';
+  const where = P.suburbs.size ? `in ${esc(suburbsLabel(P.suburbs))}` : 'around Toowoomba';
+  if (r.count >= pool.length) return `<p class="cover all">All ${pool.length} displays ${where}.</p>`;
+  const missing = pool.length - r.count;
+  let extra = '';
+  if (P.suburbs.size) {
+    P.allMin ??= tourMinutes({ start: P.start, displays: pool, returnToStart: P.back, slow: CONFIG.slowDriving }).minutes;
+    const more = Math.max(15, Math.ceil((P.allMin - r.totalMin) / 15) * 15);
+    extra = ` The other ${missing} need about another <b>${fmtDurText(more)}</b>.`;
+  }
+  return `<p class="cover"><b>${r.count} of the ${pool.length}</b> displays ${where}.${extra}</p>`;
+}
+
 function renderResults(v) {
   const P = state.plan;
   const est = P.routes.some(r => r.estimated);
@@ -324,6 +357,7 @@ function renderResults(v) {
           <div class="fig"><div class="v">${r.km < 10 ? r.km.toFixed(1) : Math.round(r.km)}<small>km</small></div><div class="s">Driving</div></div>
         </div>
         <p class="sub">${fmtDurText(r.driveMin)} driving, ${fmtDurText(r.viewMin)} looking at lights</p>
+        ${coverageLine(r)}
         <button class="btn primary wide" type="button" data-choose="${i}">Choose this drive</button>
       </div>`).join('')}`;
   $('#backForm', v).onclick = () => { P.step = 'form'; renderPlan(); };
@@ -734,7 +768,7 @@ function renderAdd() {
         </div>
         <div class="card">
           <h2>When is it on?</h2>
-          <div class="row2">
+          <div class="row2 dates">
             <div class="field"><label for="from">From</label><input type="date" id="from" value="${CONFIG.season.from}"></div>
             <div class="field"><label for="until">Until</label><input type="date" id="until" value="${CONFIG.season.until}"></div>
           </div>
@@ -788,7 +822,14 @@ function renderAdd() {
     if ($('#website', v).value) { A.done = true; renderAdd(); return; } // spam bot filled the hidden box
     if (!A.place) return err('Type your address and pick it from the list.', box);
     if (!A.size) return err('Choose how big your display is.', $('.picker', v));
-    if (!$('#consent', v).checked) return err('Please tick the box to say the address can be shown.', $('#consent', v));
+    if (!$('#consent', v).checked) {
+      status.textContent = '';
+      return popup(`<h2>Is this your home?</h2>
+        <p style="margin:0">We can only show an address on the public map if it's your home, or you have the owner's OK.</p>
+        <p style="margin:0;font-weight:700">${esc(A.place.title)}${A.place.suburb ? ', ' + esc(A.place.suburb) : ''}</p>`,
+        [{ id: 'yes', text: "Yes, it's my home. Add my lights", cls: 'go' }, { id: 'no', text: 'Go back' }],
+        id => { if (id === 'yes') { $('#consent', v).checked = true; $('#addForm', v).requestSubmit(); } });
+    }
     const from = $('#from', v).value, until = $('#until', v).value;
     if (from && until && until < from) return err('The "Until" date is before the "From" date.', $('#until', v));
     const btn = $('#addBtn', v); btn.disabled = true; status.className = 'status'; status.textContent = 'Sending…';
@@ -800,6 +841,9 @@ function renderAdd() {
         hours: `${$('#hFrom', v).value} – ${$('#hTo', v).value}`, notes: $('#notes', v).value
       });
       A.done = true; renderAdd(); scrollTop();
+      popup(`<h2>Your address has been added to the map</h2>
+        <p style="margin:0">It will show for everyone once it's been checked. Thanks for lighting up Toowoomba!</p>`,
+        [{ id: 'ok', text: 'OK', cls: 'go' }]);
     } catch (ex) {
       console.error(ex); btn.disabled = false;
       err("Couldn't send just now. Check you have signal and try again.");
