@@ -28,5 +28,12 @@ export const CONFIG = {
 
   // Paste the Firebase web app settings here to go live (Firebase console → Project settings → Your apps).
   // While this is null the app runs on the sample displays, and new entries are kept on this phone only.
-  firebase: null
+  firebase: {
+    apiKey: 'AIzaSyAx4Plsu9WnWY9SXzuVP9hEnwa7PwL28Mw',
+    authDomain: 'toowoomba-christmas-lights.firebaseapp.com',
+    projectId: 'toowoomba-christmas-lights',
+    storageBucket: 'toowoomba-christmas-lights.firebasestorage.app',
+    messagingSenderId: '862198661826',
+    appId: '1:862198661826:web:7db9c9254049da4cdeb15b'
+  }
 };

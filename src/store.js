@@ -99,10 +99,23 @@ async function liveStore(cfg) {
   };
 }
 
+// Live, but the database couldn't be reached (no signal, or it's down): show the last list this phone saw,
+// never the made-up sample displays
+function offlineStore() {
+  const fail = async () => { throw new Error("Can't reach the database right now"); };
+  return {
+    mode: 'offline',
+    async listApproved() { return LS.get('lm.cache.approved', []); },
+    submit: fail, signIn: fail, listPending: fail, approve: fail, reject: fail, remove: fail,
+    async isAdmin() { return false; },
+    async whoAmI() { return null; }
+  };
+}
+
 export async function openStore() {
   if (CONFIG.firebase) {
     try { return await liveStore(CONFIG.firebase); }
-    catch (e) { console.error('Could not reach Firebase, using demo data', e); }
+    catch (e) { console.error('Could not reach Firebase', e); return offlineStore(); }
   }
   return demoStore();
 }

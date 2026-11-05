@@ -303,6 +303,7 @@ function useMyLocation(btn, status, done) {
 async function findDrives() {
   const P = state.plan, v = $('#view-plan'), status = $('#planStatus', v), btn = $('#findBtn', v);
   if (!P.start) { status.className = 'status err'; status.textContent = 'Choose where you are starting first.'; $('#startBox input', v)?.focus(); return; }
+  if (!state.displays.length) { status.className = 'status err'; status.innerHTML = 'No displays are on the map yet. Got lights? <a href="#add">Be the first to add yours</a>.'; return; }
   let pool = preSeason() ? state.displays : state.displays.filter(litTonight);
   if (P.suburbs.size) pool = pool.filter(d => P.suburbs.has(d.suburb));
   const list = shortlist(P.start, pool, P.minutes);
