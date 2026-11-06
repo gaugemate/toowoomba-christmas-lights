@@ -2,7 +2,11 @@ rules_version = '2';
 // Database rules for Toowoomba Christmas Lights (Firebase Firestore).
 // - Anyone can see approved displays.
 // - Anyone can add a display, but only as "pending", and only with the expected fields and sizes.
-// - Only admins can see pending displays, approve them, or delete displays.
+// - Each phone gets a private anonymous ID; a display added from that phone carries it as ownerUid,
+//   so that phone (and nobody else) can see, edit or remove it.
+// - When the person who added it edits an approved display: changes to the size, features, how to see it,
+//   dates and hours stay on the map; changing the address, suburb, map spot or notes sends it back to "pending".
+// - Only admins can see everyone's pending displays, approve them, or change or delete any display.
 // - Admins are listed in the "admins" collection: one document per admin, named with their user ID
 //   (shown on the app's #admin page after they sign in). Add those by hand in the Firebase console.
 service cloud.firestore {
@@ -12,15 +16,16 @@ service cloud.firestore {
       return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    function isOwner(d) {
+      // (a display added before ownerUid existed has none, so this check simply fails for it)
+      return request.auth != null && d.ownerUid == request.auth.uid;
+    }
+
     function str(v, max) { return v is string && v.size() <= max; }
 
-    function validNewDisplay(d) {
-      return d.keys().hasOnly(['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing',
-                               'from', 'until', 'hours', 'notes', 'status', 'createdAt'])
-        && d.keys().hasAll(['address', 'lat', 'lng', 'size', 'viewing', 'status', 'createdAt'])
-        && d.status == 'pending'
-        && d.createdAt == request.time
-        && str(d.address, 120) && d.address.size() > 0
+    // The details a display can have, whoever is writing them
+    function goodDetails(d) {
+      return str(d.address, 120) && d.address.size() > 0
         && (!('suburb' in d) || str(d.suburb, 60))
         && d.lat is number && d.lat > -28.5 && d.lat < -26.5
         && d.lng is number && d.lng > 150.5 && d.lng < 153
@@ -33,10 +38,36 @@ service cloud.firestore {
         && (!('notes' in d) || str(d.notes, 200));
     }
 
+    function validNewDisplay(d) {
+      return d.keys().hasOnly(['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing',
+                               'from', 'until', 'hours', 'notes', 'status', 'createdAt', 'ownerUid'])
+        && d.keys().hasAll(['address', 'lat', 'lng', 'size', 'viewing', 'status', 'createdAt'])
+        && d.status == 'pending'
+        && d.createdAt == request.time
+        && (!('ownerUid' in d) || (request.auth != null && d.ownerUid == request.auth.uid))
+        && goodDetails(d);
+    }
+
+    // The person who added a display editing it
+    function ownerEdit() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = after.diff(before).affectedKeys();
+      return isOwner(before)
+        && after.ownerUid == before.ownerUid
+        && goodDetails(after)
+        && changed.hasOnly(['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing',
+                            'from', 'until', 'hours', 'notes', 'status', 'updatedAt'])
+        && (after.status == 'pending'
+            || (before.status == 'approved' && after.status == 'approved'
+                && changed.hasOnly(['size', 'features', 'viewing', 'from', 'until', 'hours', 'updatedAt'])));
+    }
+
     match /displays/{id} {
-      allow read: if resource.data.status == 'approved' || isAdmin();
+      allow read: if resource.data.status == 'approved' || isAdmin() || isOwner(resource.data);
       allow create: if validNewDisplay(request.resource.data);
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() || ownerEdit();
+      allow delete: if isAdmin() || isOwner(resource.data);
     }
 
     match /admins/{uid} {

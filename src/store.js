@@ -36,7 +36,7 @@ function demoStore() {
     },
     async submit(entry) {
       const list = extra();
-      list.push({ ...cleanEntry(entry), id: 'u' + Date.now().toString(36), status: 'pending', createdAt: Date.now() });
+      list.push({ ...cleanEntry(entry), id: 'u' + Date.now().toString(36), status: 'pending', createdAt: Date.now(), mine: true });
       save(list);
     },
     async isAdmin() { return true; },
@@ -44,6 +44,8 @@ function demoStore() {
     async listPending() { return extra().filter(d => d.status === 'pending'); },
     async approve(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'approved' } : d))); },
     async unapprove(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'pending' } : d))); },
+    async myDisplays() { return extra().filter(d => d.mine); },
+    async update(id, entry, status) { save(extra().map(d => (d.id === id ? { ...d, ...cleanEntry(entry), status, updatedAt: Date.now() } : d))); },
     async reject(id) { save(extra().filter(d => d.id !== id)); },
     async remove(id) {
       if (id.startsWith('s')) { const g = removed(); g.add(id); LS.set('lm.demo.removed', [...g]); }
@@ -64,6 +66,12 @@ async function liveStore(cfg) {
   const rows = snap => snap.docs.map(d => ({ id: d.id, ...d.data() }));
   const authReady = new Promise(r => au.onAuthStateChanged(auth, () => r(), () => r()));
   let adminCheck = null;
+  // Whoever is signed in on this phone; if nobody, a private anonymous ID (needs Anonymous sign-in on in Firebase)
+  const phoneId = async () => {
+    await authReady;
+    if (auth.currentUser) return auth.currentUser;
+    try { return (await au.signInAnonymously(auth)).user; } catch (e) { console.warn('No anonymous sign-in', e.code || e); return null; }
+  };
   au.onAuthStateChanged(auth, () => { adminCheck = null; });
 
   return {
@@ -80,14 +88,32 @@ async function liveStore(cfg) {
       }
     },
     async submit(entry) {
-      await fs.addDoc(col, { ...cleanEntry(entry), status: 'pending', createdAt: fs.serverTimestamp() });
+      const data = { ...cleanEntry(entry), status: 'pending', createdAt: fs.serverTimestamp() };
+      const u = await phoneId();
+      if (u) data.ownerUid = u.uid;
+      try { await fs.addDoc(col, data); }
+      catch (e) {
+        // Older database rules don't know about ownerUid yet: send it without, so nobody is ever turned away
+        if (!data.ownerUid || e.code !== 'permission-denied') throw e;
+        delete data.ownerUid;
+        await fs.addDoc(col, data);
+      }
+    },
+    async myDisplays() {
+      await authReady;
+      const u = auth.currentUser;
+      if (!u) return [];
+      try { return rows(await fs.getDocs(fs.query(col, fs.where('ownerUid', '==', u.uid)))); } catch (e) { return []; }
+    },
+    async update(id, entry, status) {
+      await fs.updateDoc(fs.doc(db, 'displays', id), { ...cleanEntry(entry), status, updatedAt: fs.serverTimestamp() });
     },
     isAdmin() {
       // Remembered for this signed-in person, so the check happens once rather than on every screen
       adminCheck ??= (async () => {
         await authReady;
         const u = auth.currentUser;
-        if (!u) return false;
+        if (!u || u.isAnonymous) return false;
         try { return (await fs.getDoc(fs.doc(db, 'admins', u.uid))).exists(); } catch (e) { adminCheck = null; return false; }
       })();
       return adminCheck;
@@ -99,7 +125,7 @@ async function liveStore(cfg) {
       adminCheck = null;
       return this.isAdmin();
     },
-    async whoAmI() { await authReady; return auth.currentUser ? { uid: auth.currentUser.uid, email: auth.currentUser.email } : null; },
+    async whoAmI() { await authReady; const u = auth.currentUser; return u && !u.isAnonymous ? { uid: u.uid, email: u.email } : null; },
     async listPending() { return rows(await fs.getDocs(fs.query(col, fs.where('status', '==', 'pending')))); },
     async approve(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'approved', approvedAt: fs.serverTimestamp() }); },
     async unapprove(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'pending' }); },
@@ -116,6 +142,8 @@ function offlineStore() {
   return {
     mode: 'offline',
     async listApproved() { return LS.get('lm.cache.approved', []); },
+    async myDisplays() { return []; },
+    update: fail,
     submit: fail, signIn: fail, listPending: fail, approve: fail, reject: fail, remove: fail,
     async isAdmin() { return false; },
     async whoAmI() { return null; }

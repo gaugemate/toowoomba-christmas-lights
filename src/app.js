@@ -2,7 +2,7 @@
 import { CONFIG } from './config.js';
 import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN } from './planner.js';
 import * as svc from './services.js';
-import { openStore } from './store.js';
+import { openStore, cleanEntry } from './store.js';
 import { Guide, fmtDist, metres, bearingWords } from './guide.js';
 
 const L = window.L;
@@ -31,7 +31,7 @@ const state = {
   displays: [],
   tab: 'plan',
   plan: { start: null, suburbs: new Set(), minutes: 120, back: true, step: 'form', routes: null, chosen: 0, lines: [], driveAt: 0 },
-  add: { place: null, size: 0, features: new Set(), viewing: 'drive', done: false },
+  add: { done: false, editing: null },
   maps: {}
 };
 
@@ -754,139 +754,223 @@ function listHTML(list) {
 }
 
 /* =================================================================== ADD MY LIGHTS */
-function renderAdd() {
-  const v = $('#view-add'), A = state.add;
-  if (A.done) {
-    v.innerHTML = `
-      <div class="card"><h1>You've been added to the list!</h1>
-        <p style="margin:0">Please wait while an admin approves your display. It will show on the map once it's been checked. Merry Christmas!</p>
-        ${state.store.mode === 'demo' ? '<p class="demo-note">Demo: your entry is waiting in Approvals on this phone only.</p>' : ''}
-      </div>`;
-    return;
-  }
+// ---------- The display form: adding a display, editing your own, or an admin editing any ----------
+// mode: 'new' | 'edit' (the person who added it) | 'admin'
+// Changing the address or notes of an approved display sends it back for a check (only when not an admin).
+const MAJOR = ['address', 'suburb', 'lat', 'lng', 'notes'];
+
+function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
+  const d = initial || {};
+  const F = {
+    place: initial ? { title: d.address, line2: d.suburb || '', suburb: d.suburb || '', lat: d.lat, lng: d.lng, hasNumber: true } : null,
+    size: d.size || 0, features: new Set(d.features || []), viewing: d.viewing || 'drive'
+  };
+  const [hOn, hOff] = String(d.hours || '7pm – 10pm').split(/\s*–\s*/);
+  const heading = mode === 'new' ? 'Add your Christmas lights' : mode === 'admin' ? 'Edit this display' : 'Edit your display';
   v.innerHTML = `
-    <h1>Add your Christmas lights</h1>
-    <p class="note">It's free and we don't need your name. Your display shows on the map once it's been checked.</p>
+    ${mode !== 'new' ? '<button class="back" type="button" id="formBack">‹ Back</button>' : ''}
+    <h1>${heading}</h1>
+    <p class="note">${mode === 'new' ? "It's free and we don't need your name. Your display shows on the map once it's been checked."
+      : mode === 'edit' && d.status === 'approved' ? 'Changes to the size, what’s in it, how to see it and the times show straight away. Changing the address or notes means a quick re-check first.'
+      : 'Make your changes, then tap Save changes.'}</p>
     <form id="addForm" novalidate>
       <div class="view">
         <div class="card">
-          <h2>Your address</h2>
+          <h2>${mode === 'admin' ? 'Address' : 'Your address'}</h2>
           <div id="addrBox"></div>
           <div id="pinWrap" hidden>
             <div class="map small" id="pinMap"></div>
-            <p class="note" style="margin-top:8px">Is the dot on your house? If not, drag it there.</p>
+            <p class="note" style="margin-top:8px">Is the dot on the house? If not, drag it there.</p>
           </div>
           <div class="field" id="subField" hidden><label for="suburb">Suburb</label><input type="text" id="suburb" maxlength="60" autocomplete="address-level2"></div>
         </div>
         <div class="card">
-          <h2>How big is your display?</h2>
+          <h2>How big is the display?</h2>
           <div class="picker" role="radiogroup" aria-label="Display size">
-            ${[1, 2, 3, 4].map(n => `<button type="button" class="pick" role="radio" data-size="${n}" aria-checked="${A.size === n}"><span><b>${SIZES[n].label}</b><small>${SIZES[n].hint}</small></span><span class="stars">${stars(n)}</span></button>`).join('')}
+            ${[1, 2, 3, 4].map(n => `<button type="button" class="pick" role="radio" data-size="${n}" aria-checked="${F.size === n}"><span><b>${SIZES[n].label}</b><small>${SIZES[n].hint}</small></span><span class="stars">${stars(n)}</span></button>`).join('')}
           </div>
         </div>
         <div class="card">
           <h2>What's in it? <span class="muted" style="font-weight:600;font-size:1rem">(tick any)</span></h2>
-          <div class="chips" id="featChips">${Object.entries(FEATURES).map(([k, t]) => `<button type="button" class="chip" data-f="${k}" aria-pressed="${A.features.has(k)}">${t}</button>`).join('')}</div>
+          <div class="chips" id="featChips">${Object.entries(FEATURES).map(([k, t]) => `<button type="button" class="chip" data-f="${k}" aria-pressed="${F.features.has(k)}">${t}</button>`).join('')}</div>
           <h2>How do people see it?</h2>
           <div class="seg" role="group" aria-label="How to see it">
-            <button type="button" data-view="drive" aria-pressed="${A.viewing === 'drive'}">Drive past</button>
-            <button type="button" data-view="walk" aria-pressed="${A.viewing === 'walk'}">Park and walk</button>
+            <button type="button" data-view="drive" aria-pressed="${F.viewing === 'drive'}">Drive past</button>
+            <button type="button" data-view="walk" aria-pressed="${F.viewing === 'walk'}">Park and walk</button>
           </div>
         </div>
         <div class="card">
           <h2>When is it on?</h2>
           <div class="row2 dates">
-            <div class="field"><label for="from">From</label><input type="date" id="from" value="${CONFIG.season.from}"></div>
-            <div class="field"><label for="until">Until</label><input type="date" id="until" value="${CONFIG.season.until}"></div>
+            <div class="field"><label for="from">From</label><input type="date" id="from" value="${esc(d.from ?? CONFIG.season.from)}"></div>
+            <div class="field"><label for="until">Until</label><input type="date" id="until" value="${esc(d.until ?? CONFIG.season.until)}"></div>
           </div>
           <div class="row2">
-            <div class="field"><label for="hFrom">Lights on</label><select id="hFrom">${HOURS_FROM.map(h => `<option ${h === '7pm' ? 'selected' : ''}>${h}</option>`).join('')}</select></div>
-            <div class="field"><label for="hTo">Lights off</label><select id="hTo">${HOURS_TO.map(h => `<option ${h === '10pm' ? 'selected' : ''}>${h}</option>`).join('')}</select></div>
+            <div class="field"><label for="hFrom">Lights on</label><select id="hFrom">${[...new Set([...HOURS_FROM, hOn])].map(h => `<option ${h === hOn ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
+            <div class="field"><label for="hTo">Lights off</label><select id="hTo">${[...new Set([...HOURS_TO, hOff || '10pm'])].map(h => `<option ${h === (hOff || '10pm') ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
           </div>
         </div>
         <div class="card">
           <div class="field"><label for="notes">Anything people should know? <span class="muted" style="font-weight:600">(optional)</span></label>
-            <textarea id="notes" maxlength="200" placeholder="e.g. tune to 87.6 FM for the music, Santa visits Saturdays"></textarea></div>
-          <label class="check"><input type="checkbox" id="consent"><span>This is my home (or I have the owner's OK), and I'm happy for the address to show on the public map.</span></label>
-          <input class="hp" type="text" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+            <textarea id="notes" maxlength="200" placeholder="e.g. tune to 87.6 FM for the music, Santa visits Saturdays">${esc(d.notes || '')}</textarea></div>
+          ${mode === 'new' ? `<label class="check"><input type="checkbox" id="consent"><span>This is my home (or I have the owner's OK), and I'm happy for the address to show on the public map.</span></label>
+          <input class="hp" type="text" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">` : ''}
         </div>
-        <button class="btn go wide" type="submit" id="addBtn">Add my lights</button>
+        <button class="btn go wide" type="submit" id="addBtn">${mode === 'new' ? 'Add my lights' : 'Save changes'}</button>
+        ${mode !== 'new' ? '<button class="btn wide" type="button" id="formCancel">Cancel</button>' : ''}
         <p class="status" id="addStatus" role="status"></p>
       </div>
     </form>`;
+  for (const id of ['#formBack', '#formCancel']) { const b = $(id, v); if (b) b.onclick = () => onCancel && onCancel(); }
 
   let pinMap = null, pin = null;
   const box = $('#addrBox', v);
   const drawAddr = () => {
-    if (A.place) {
-      box.innerHTML = pickedHTML(A.place);
-      $('[data-act=change]', box).onclick = () => { A.place = null; $('#pinWrap', v).hidden = true; $('#subField', v).hidden = true; drawAddr(); };
+    if (F.place) {
+      box.innerHTML = pickedHTML(F.place);
+      $('[data-act=change]', box).onclick = () => { F.place = null; $('#pinWrap', v).hidden = true; $('#subField', v).hidden = true; drawAddr(); };
       $('#pinWrap', v).hidden = false; $('#subField', v).hidden = false;
-      $('#suburb', v).value = A.place.suburb || '';
+      $('#suburb', v).value = F.place.suburb || '';
       if (!pinMap) {
-        pinMap = makeMap($('#pinMap', v), { center: [A.place.lat, A.place.lng], zoom: 18 });
-        pin = L.marker([A.place.lat, A.place.lng], { draggable: true, icon: pinIcon('home', 30) }).addTo(pinMap);
-        pin.on('dragend', () => { const ll = pin.getLatLng(); A.place.lat = ll.lat; A.place.lng = ll.lng; });
-      } else { pinMap.setView([A.place.lat, A.place.lng], 18); pin.setLatLng([A.place.lat, A.place.lng]); setTimeout(() => pinMap.invalidateSize(), 50); }
+        pinMap = makeMap($('#pinMap', v), { center: [F.place.lat, F.place.lng], zoom: 18 });
+        pin = L.marker([F.place.lat, F.place.lng], { draggable: true, icon: pinIcon('home', 30) }).addTo(pinMap);
+        pin.on('dragend', () => { const ll = pin.getLatLng(); F.place.lat = ll.lat; F.place.lng = ll.lng; });
+      } else { pinMap.setView([F.place.lat, F.place.lng], 18); pin.setLatLng([F.place.lat, F.place.lng]); setTimeout(() => pinMap.invalidateSize(), 50); }
     } else {
-      addressBox(box, { placeholder: 'Your house number and street, e.g. 12 Ruthven St', onPick: p => {
+      addressBox(box, { placeholder: 'House number and street, e.g. 12 Ruthven St', onPick: p => {
         if (!p.hasNumber) {
           // A street with no number: ask again, with the number in front
           drawAddr();
           const s = $('#addStatus', v); s.className = 'status err';
-          s.textContent = `Please type your house number first, e.g. "12 ${p.title}".`;
-          toast(`Type your house number first, e.g. 12 ${p.title}`);
+          s.textContent = `Please type the house number first, e.g. "12 ${p.title}".`;
+          toast(`Type the house number first, e.g. 12 ${p.title}`);
           const inp = $('#addrBox input', v); inp.value = ` ${p.title}`; inp.focus(); inp.setSelectionRange(0, 0);
           return;
         }
         $('#addStatus', v).textContent = '';
-        A.place = { ...p };
+        F.place = { ...p };
         drawAddr();
-        if (p.typedNumber) toast('Now drag the dot onto your house');
+        if (p.typedNumber) toast('Now drag the dot onto the house');
       } });
     }
   };
   drawAddr();
 
-  $$('[data-size]', v).forEach(b => b.onclick = () => { A.size = +b.dataset.size; $$('[data-size]', v).forEach(x => x.setAttribute('aria-checked', x === b)); });
-  $('#featChips', v).onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; const f = b.dataset.f; A.features.has(f) ? A.features.delete(f) : A.features.add(f); b.setAttribute('aria-pressed', A.features.has(f)); };
-  $$('[data-view]', v).forEach(b => b.onclick = () => { A.viewing = b.dataset.view; $$('[data-view]', v).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+  $$('[data-size]', v).forEach(b => b.onclick = () => { F.size = +b.dataset.size; $$('[data-size]', v).forEach(x => x.setAttribute('aria-checked', x === b)); });
+  $('#featChips', v).onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; const f = b.dataset.f; F.features.has(f) ? F.features.delete(f) : F.features.add(f); b.setAttribute('aria-pressed', F.features.has(f)); };
+  $$('[data-view]', v).forEach(b => b.onclick = () => { F.viewing = b.dataset.view; $$('[data-view]', v).forEach(x => x.setAttribute('aria-pressed', x === b)); });
 
   $('#addForm', v).onsubmit = async e => {
     e.preventDefault();
     const status = $('#addStatus', v);
     const err = (msg, el) => { status.className = 'status err'; status.textContent = msg; if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
-    if ($('#website', v).value) { A.done = true; renderAdd(); return; } // spam bot filled the hidden box
-    if (!A.place) return err('Type your address and pick it from the list.', box);
-    if (!A.size) return err('Choose how big your display is.', $('.picker', v));
-    if (!$('#consent', v).checked) {
+    if (mode === 'new' && $('#website', v).value) { onSaved && onSaved({}); return; } // spam bot filled the hidden box
+    if (!F.place) return err('Type the address and pick it from the list.', box);
+    if (!F.size) return err('Choose how big the display is.', $('.picker', v));
+    if (mode === 'new' && !$('#consent', v).checked) {
       status.textContent = '';
       return popup(`<h2>Is this your home?</h2>
         <p style="margin:0">We can only show an address on the public map if it's your home, or you have the owner's OK.</p>
-        <p style="margin:0;font-weight:700">${esc(A.place.title)}${A.place.suburb ? ', ' + esc(A.place.suburb) : ''}</p>`,
+        <p style="margin:0;font-weight:700">${esc(F.place.title)}${F.place.suburb ? ', ' + esc(F.place.suburb) : ''}</p>`,
         [{ id: 'yes', text: "Yes, it's my home. Add my lights", cls: 'go' }, { id: 'no', text: 'Go back' }],
         id => { if (id === 'yes') { $('#consent', v).checked = true; $('#addForm', v).requestSubmit(); } });
     }
     const from = $('#from', v).value, until = $('#until', v).value;
     if (from && until && until < from) return err('The "Until" date is before the "From" date.', $('#until', v));
-    const btn = $('#addBtn', v); btn.disabled = true; status.className = 'status'; status.textContent = 'Sending…';
-    const address = A.place.title;
+    const btn = $('#addBtn', v); btn.disabled = true; status.className = 'status'; status.textContent = mode === 'new' ? 'Sending…' : 'Saving…';
+    const entry = {
+      address: F.place.title, suburb: $('#suburb', v).value.trim() || F.place.suburb, lat: F.place.lat, lng: F.place.lng,
+      size: F.size, features: [...F.features], viewing: F.viewing, from, until,
+      hours: `${$('#hFrom', v).value} – ${$('#hTo', v).value}`, notes: $('#notes', v).value
+    };
     try {
-      await state.storeReady;
-      await state.store.submit({
-        address, suburb: $('#suburb', v).value.trim() || A.place.suburb, lat: A.place.lat, lng: A.place.lng,
-        size: A.size, features: [...A.features], viewing: A.viewing, from, until,
-        hours: `${$('#hFrom', v).value} – ${$('#hTo', v).value}`, notes: $('#notes', v).value
-      });
-      A.done = true; clearToasts(); renderAdd(); scrollTop();
+      const S = await state.storeReady;
+      if (mode === 'new') { await S.submit(entry); clearToasts(); onSaved && onSaved({}); return; }
+      const before = cleanEntry(d), after = cleanEntry(entry);
+      const major = MAJOR.some(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+      const newStatus = mode === 'admin' ? d.status : (d.status === 'approved' && !major ? 'approved' : 'pending');
+      await S.update(d.id, entry, newStatus);
+      clearToasts();
+      onSaved && onSaved({ backToCheck: d.status === 'approved' && newStatus === 'pending' });
+    } catch (ex) {
+      console.error(ex); btn.disabled = false;
+      err(mode === 'new' ? "Couldn't send just now. Check you have signal and try again." : "Couldn't save just now. Check you have signal and try again.");
+    }
+  };
+}
+
+// ---------- Add my lights: the form, or "your display" once this phone has added one ----------
+function displaySummary(d) {
+  const bits = [`${stars(d.size)} ${sizeName(d.size)}`, d.viewing === 'walk' ? 'Park and walk' : 'Drive past', d.hours].filter(Boolean);
+  const feats = (d.features || []).map(f => FEATURES[f] || f);
+  return `<p class="meta" style="margin:0">${bits.map(b => `<span style="white-space:nowrap">${esc(b)}</span>`).join(' · ')}${feats.length ? '<br>' + feats.map(esc).join(', ') : ''}${d.notes ? '<br>“' + esc(d.notes) + '”' : ''}</p>`;
+}
+
+async function renderAdd() {
+  const v = $('#view-add'), A = state.add;
+  if (A.editing) {
+    return displayForm(v, {
+      mode: 'edit', initial: A.editing,
+      onCancel: () => { A.editing = null; renderAdd(); scrollTop(); },
+      onSaved: async r => {
+        A.editing = null; await loadDisplays(); renderAdd(); scrollTop();
+        popup(r.backToCheck
+          ? `<h2>Changes saved</h2><p style="margin:0">You changed the address or notes, so your display will be back on the map once it's been checked.</p>`
+          : `<h2>Changes saved</h2><p style="margin:0">Your display has been updated. Thanks for lighting up Toowoomba!</p>`,
+          [{ id: 'ok', text: 'OK', cls: 'go' }]);
+      }
+    });
+  }
+  if (!v.querySelector('form, .mine')) v.innerHTML = '<h1>Add your Christmas lights</h1><p class="note on-page">Loading…</p>';
+  let mine = [];
+  try { const S = await state.storeReady; mine = S.myDisplays ? await S.myDisplays() : []; } catch (e) { mine = []; }
+  if (state.tab !== 'add' || A.editing) return;
+
+  if (mine.length) {
+    v.innerHTML = mine.map(d => `
+      <div class="card mine" data-id="${esc(d.id)}">
+        ${d.status === 'approved'
+          ? `<h1>Your address has been added to the map</h1>`
+          : `<h1>You've been added to the list!</h1><p style="margin:0">Please wait while an admin approves your display. It will show on the map once it's been checked.</p>`}
+        <div class="myaddr">${ICON.pin}<div><b>${esc(d.address)}</b><small>${esc(d.suburb || '')}</small></div>
+          <span class="tag ${d.status === 'approved' ? 'gold' : ''}">${d.status === 'approved' ? 'On the map' : 'Waiting for a check'}</span></div>
+        ${displaySummary(d)}
+        <div class="row2"><button class="btn" type="button" data-mine="edit">Edit</button><button class="btn danger" type="button" data-mine="remove">Remove</button></div>
+        ${d.status === 'approved' ? '<a class="linkbtn" href="#map">See it on the map</a>' : ''}
+      </div>`).join('') + '<p class="note on-page" style="text-align:center">Merry Christmas from Toowoomba Christmas Lights!</p>';
+    $$('.mine', v).forEach(c => c.onclick = e => {
+      const b = e.target.closest('[data-mine]'); if (!b) return;
+      const d = mine.find(x => x.id === c.dataset.id);
+      if (b.dataset.mine === 'edit') { A.editing = d; renderAdd(); scrollTop(); return; }
+      popup(`<h2>Remove your display?</h2><p style="margin:0">${esc(d.address)} will come off the map. You can add it again later.</p>`,
+        [{ id: 'yes', text: 'Yes, remove it', cls: 'danger' }, { id: 'no', text: 'Keep it' }],
+        async id => {
+          if (id !== 'yes') return;
+          try { await state.store.remove(d.id); await loadDisplays(); A.done = false; renderAdd(); toast('Your display has been removed'); }
+          catch (ex) { toast("That didn't work. Check you have signal and try again."); }
+        });
+    });
+    return;
+  }
+
+  if (A.done) {
+    // Sent, but this phone can't look it up (e.g. no signal): the plain thank-you
+    v.innerHTML = `
+      <div class="card"><h1>You've been added to the list!</h1>
+        <p style="margin:0">Please wait while an admin approves your display. It will show on the map once it's been checked. Merry Christmas!</p>
+        ${state.store && state.store.mode === 'demo' ? '<p class="demo-note">Demo: your entry is waiting in Approvals on this phone only.</p>' : ''}
+      </div>`;
+    return;
+  }
+  displayForm(v, {
+    mode: 'new',
+    onSaved: () => {
+      A.done = true; renderAdd(); scrollTop();
       popup(`<h2>Your address has been added to the map</h2>
         <p style="margin:0">It will show for everyone once it's been checked. Thanks for lighting up Toowoomba!</p>`,
         [{ id: 'ok', text: 'OK', cls: 'go' }]);
-    } catch (ex) {
-      console.error(ex); btn.disabled = false;
-      err("Couldn't send just now. Check you have signal and try again.");
     }
-  };
+  });
 }
 
 /* =================================================================== APPROVALS (#admin) */
@@ -938,16 +1022,26 @@ async function renderAdmin() {
         <div><b style="font-size:1.2rem">${esc(d.address)}</b><div class="muted" style="font-weight:600">${esc(d.suburb)}${joined(d) ? ' · ' + joined(d) : ''}</div></div>
         <p class="meta">${stars(d.size)} ${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'} · ${esc(d.hours)}<br>${esc(fmtDate(d.from))} to ${esc(fmtDate(d.until))}${(d.features || []).length ? '<br>' + d.features.map(f => esc(FEATURES[f] || f)).join(', ') : ''}${d.notes ? '<br>“' + esc(d.notes) + '”' : ''}</p>
         <a class="linkbtn" href="https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}" target="_blank" rel="noopener">Check the spot on Google Maps</a>
+        <button class="btn" type="button" data-act="edit">Edit</button>
         <div class="row2"><button class="btn danger" type="button" data-act="reject">Reject</button><button class="btn go" type="button" data-act="approve" style="min-height:52px;font-size:1.05rem">Approve</button></div>
       </div>`).join('') : '<p class="note">Nothing waiting. New entries from the Add my lights page show up here.</p>'}
     <h2 class="on-page" style="color:#fff">On the map (${live.length})</h2>
-    <p class="note on-page">Newest first. <b>Undo</b> moves a display back to “Waiting for a check”; <b>Remove</b> deletes it.</p>
-    <ul class="list" id="liveList">${live.map(d => `<li><div class="lrow"><span><b>${esc(d.address)}</b><small>${esc(d.suburb)} · ${sizeName(d.size)}${joined(d) ? ' · ' + joined(d) : ''}</small></span>
-      <span class="adminbtns">${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" style="min-height:44px" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" style="min-height:44px" type="button" data-remove="${esc(d.id)}">Remove</button></span></div></li>`).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
+    <p class="note on-page">Newest first. <b>Edit</b> changes the details; <b>Undo</b> moves a display back to “Waiting for a check”; <b>Remove</b> deletes it.</p>
+    <ul class="list" id="liveList">${live.map(d => `<li class="adminrow"><span><b>${esc(d.address)}</b><small>${esc(d.suburb)} · ${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${joined(d) ? ' · ' + joined(d) : ''}</small></span>
+      <span class="adminbtns">${S.update && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-edit="${esc(d.id)}">Edit</button>` : ''}${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" type="button" data-remove="${esc(d.id)}">Remove</button></span></li>`).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
     ${S.signOut ? '<button class="linkbtn on-page" type="button" id="signOut" style="color:#fff">Sign out of admin on this phone</button>' : ''}`;
   $('#copyLink', v).onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch (e) { $('#addLink', v).select(); toast('Select the link and copy it'); } };
+  const adminEdit = d => {
+    displayForm(v, {
+      mode: 'admin', initial: d,
+      onCancel: () => { renderAdmin(); scrollTop(); },
+      onSaved: async () => { await loadDisplays(); renderAdmin(); scrollTop(); toast('Changes saved'); }
+    });
+    scrollTop();
+  };
   $$('.pending', v).forEach(c => c.onclick = async e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
+    if (b.dataset.act === 'edit') return adminEdit(pending.find(x => x.id === c.dataset.id));
     b.disabled = true;
     try {
       if (b.dataset.act === 'approve') { await S.approve(c.dataset.id); toast('Approved: it\'s on the map'); }
@@ -957,6 +1051,8 @@ async function renderAdmin() {
   });
   let armed = null;
   $('#liveList', v).onclick = async e => {
+    const ed = e.target.closest('[data-edit]');
+    if (ed) return adminEdit(live.find(x => x.id === ed.dataset.edit));
     const u = e.target.closest('[data-undo]');
     if (u) {
       u.disabled = true;
