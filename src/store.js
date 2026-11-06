@@ -161,6 +161,31 @@ async function liveStore(cfg) {
     async approve(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'approved', approvedAt: fs.serverTimestamp() }); },
     async unapprove(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'pending' }); },
     async signOut() { await au.signOut(auth); adminCheck = null; },
+    // What the database says to this phone, step by step, for tracking down problems
+    async diagnose() {
+      const out = [];
+      const step = async (label, f) => { try { out.push([label, await f()]); } catch (e) { out.push([label, 'ERROR ' + (e.code || '') + ' ' + (e.message || e)]); } };
+      await authReady;
+      const u = auth.currentUser;
+      out.push(['Database project', cfg.projectId]);
+      out.push(['Signed in as', u ? `${u.email || '(no email)'} · ${u.isAnonymous ? 'anonymous phone ID' : 'Google'} · ID ${u.uid}` : 'nobody']);
+      await step('Admin entry for this ID', async () => (u ? ((await fs.getDoc(fs.doc(db, 'admins', u.uid))).exists() ? 'yes' : 'NO') : 'not signed in'));
+      await step('Waiting (status = pending)', async () => {
+        const r = rows(await fs.getDocs(fs.query(col, fs.where('status', '==', 'pending'))));
+        return `${r.length}${r.length ? ': ' + r.map(d => d.address).join('; ') : ''}`;
+      });
+      await step('On the map (status = approved)', async () => (await fs.getDocs(fs.query(col, fs.where('status', '==', 'approved')))).size);
+      await step('Every display (admins only)', async () => {
+        const r = rows(await fs.getDocs(col));
+        return `${r.length}${r.length ? ': ' + r.map(d => `${d.address} [${d.status}]${d.ownerUid ? ' owner ' + String(d.ownerUid).slice(0, 6) : ''}`).join('; ') : ''}`;
+      });
+      await step('Added from this phone', async () => {
+        if (!u) return 'not signed in';
+        const r = rows(await fs.getDocs(fs.query(col, fs.where('ownerUid', '==', u.uid))));
+        return `${r.length}${r.length ? ': ' + r.map(d => `${d.address} [${d.status}]`).join('; ') : ''}`;
+      });
+      return out;
+    },
     async reject(id) { await fs.deleteDoc(fs.doc(db, 'displays', id)); },
     async remove(id) { await fs.deleteDoc(fs.doc(db, 'displays', id)); }
   };

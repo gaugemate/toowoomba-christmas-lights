@@ -1078,7 +1078,8 @@ async function renderAdmin() {
     <p class="note on-page">Newest first. <b>Edit</b> changes the details; <b>Undo</b> moves a display back to “Waiting for a check”; <b>Remove</b> deletes it.</p>
     <ul class="list" id="liveList">${live.map(d => `<li class="adminrow"><span><b>${esc(d.address)}</b><small>${esc(d.suburb)} · ${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${joined(d) ? ' · ' + joined(d) : ''}</small></span>
       <span class="adminbtns">${S.update && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-edit="${esc(d.id)}">Edit</button>` : ''}${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" type="button" data-remove="${esc(d.id)}">Remove</button></span></li>`).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
-    ${S.signOut ? '<button class="linkbtn on-page" type="button" id="signOut" style="color:#fff">Sign out of admin on this phone</button>' : ''}`;
+    ${S.signOut ? '<button class="linkbtn on-page" type="button" id="signOut" style="color:#fff">Sign out of admin on this phone</button>' : ''}
+    ${S.diagnose ? '<button class="btn wide" type="button" id="diagnose">Check the database</button><div id="diagOut"></div>' : ''}`;
   $('#copyLink', v).onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch (e) { $('#addLink', v).select(); toast('Select the link and copy it'); } };
   $('#refreshAdmin', v).onclick = async () => {
     const b = $('#refreshAdmin', v); b.disabled = true; b.textContent = 'Refreshing…';
@@ -1120,6 +1121,18 @@ async function renderAdmin() {
     const b = e.target.closest('[data-remove]'); if (!b) return;
     if (armed !== b) { armed = b; b.textContent = 'Tap again'; return; } // two taps, like GaugeMate's Leave
     await S.remove(b.dataset.remove); await loadDisplays(); renderAdmin(); toast('Removed from the map');
+  };
+  const dg = $('#diagnose', v);
+  if (dg) dg.onclick = async () => {
+    dg.disabled = true; dg.textContent = 'Checking…';
+    const lines = await S.diagnose();
+    let ver = '?'; try { ver = (await caches.keys()).filter(k => k.startsWith('tcl-app-')).join(', ') || 'none'; } catch (e) { /* no caches */ }
+    lines.unshift(['App version', ver]);
+    $('#diagOut', v).innerHTML = `<div class="card"><h2>What the database says</h2>
+      <ul class="diag">${lines.map(([k, val]) => `<li><b>${esc(k)}</b><span>${esc(String(val))}</span></li>`).join('')}</ul>
+      <p class="note">Take a screenshot of this and send it to Claude.</p></div>`;
+    dg.disabled = false; dg.textContent = 'Check the database again';
+    $('#diagOut', v).scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const so = $('#signOut', v);
   if (so) so.onclick = async () => { await S.signOut(); setAdminTab(false); location.hash = 'plan'; toast('Signed out'); };
