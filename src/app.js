@@ -1024,8 +1024,9 @@ async function renderAdmin() {
     v.innerHTML = `<h1>Approvals</h1><div class="card"><p style="margin:0">Can't reach the database right now. Check your phone has signal, then close and reopen the app.</p></div>`;
     return;
   }
-  // Ask "am I an admin?" and "what's waiting?" at the same time
-  const pendingP = S.listPending().catch(() => null);
+  // Ask "am I an admin?" and "what's waiting?" at the same time (the live list, once it's running, is used instead)
+  const pendingP = state.pendingLive ? Promise.resolve({ list: state.pendingLive })
+    : S.listPending().then(list => ({ list }), err => ({ err }));
   const admin = await S.isAdmin();
   if (state.tab !== 'admin') return;
   if (!admin) {
@@ -1047,14 +1048,18 @@ async function renderAdmin() {
     return;
   }
   setAdminTab(true);
-  const pending = (await pendingP) || [];
-  if (state.tab !== 'admin') return;
+  const got = await pendingP;
+  if (state.tab !== 'admin' || state.adminEditing) return;
+  const loadErr = got.err || state.pendingError;
+  const pending = got.list || state.pendingLive || [];
   const link = location.origin + location.pathname + '#add';
   const joined = d => { const c = d.createdAt, t = c?.toDate ? c.toDate() : typeof c === 'number' ? new Date(c) : c?.seconds ? new Date(c.seconds * 1000) : null;
     return t ? 'Added ' + t.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : ''; };
   const live = state.displays.slice().sort((a, b) => (b.createdAt?.seconds ?? b.createdAt ?? 0) - (a.createdAt?.seconds ?? a.createdAt ?? 0));
   v.innerHTML = `
-    <h1>Approvals</h1>
+    <div class="adminhead"><h1>Approvals</h1><button class="btn" type="button" id="refreshAdmin">↻ Refresh</button></div>
+    <p class="note on-page">New displays appear here by themselves as people add them.</p>
+    ${loadErr ? `<div class="card"><p class="status err" style="margin:0">Couldn't load the waiting list (${esc(loadErr.code || loadErr.message || 'unknown error')}). Tap Refresh. If it keeps happening, sign out at the bottom of this page and sign in again.</p></div>` : ''}
     ${S.mode === 'demo' ? '<p class="demo-note">Demo mode: entries and approvals are kept on this phone only. Once the database is connected, everyone\'s entries land here.</p>' : ''}
     <div class="card"><h2>Link for the Facebook post</h2><p class="note">People tap this to add their display.</p>
       <input type="text" readonly value="${esc(link)}" id="addLink"><button class="btn wide" type="button" id="copyLink">Copy link</button></div>
@@ -1075,11 +1080,19 @@ async function renderAdmin() {
       <span class="adminbtns">${S.update && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-edit="${esc(d.id)}">Edit</button>` : ''}${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" type="button" data-remove="${esc(d.id)}">Remove</button></span></li>`).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
     ${S.signOut ? '<button class="linkbtn on-page" type="button" id="signOut" style="color:#fff">Sign out of admin on this phone</button>' : ''}`;
   $('#copyLink', v).onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch (e) { $('#addLink', v).select(); toast('Select the link and copy it'); } };
+  $('#refreshAdmin', v).onclick = async () => {
+    const b = $('#refreshAdmin', v); b.disabled = true; b.textContent = 'Refreshing…';
+    stopPendingWatch(); state.pendingError = null;
+    await loadDisplays();
+    startPendingWatch();
+    renderAdmin();
+  };
   const adminEdit = d => {
+    state.adminEditing = true;
     displayForm(v, {
       mode: 'admin', initial: d,
-      onCancel: () => { renderAdmin(); scrollTop(); },
-      onSaved: async () => { await loadDisplays(); renderAdmin(); scrollTop(); toast('Changes saved'); }
+      onCancel: () => { state.adminEditing = false; renderAdmin(); scrollTop(); },
+      onSaved: async () => { state.adminEditing = false; await loadDisplays(); renderAdmin(); scrollTop(); toast('Changes saved'); }
     });
     scrollTop();
   };
@@ -1127,6 +1140,7 @@ new MutationObserver(() => requestAnimationFrame(() => fitNumbers())).observe(do
 
 function show(tab, { keepScroll = false } = {}) {
   closePopup();
+  if (tab !== 'admin') state.adminEditing = false;
   if (!['plan', 'map', 'add', 'admin'].includes(tab)) tab = 'plan';
   state.tab = tab;
   for (const t of ['plan', 'map', 'add', 'admin']) $(`#view-${t}`).hidden = t !== tab;
@@ -1159,9 +1173,37 @@ function cachedDisplays() {
   try { return JSON.parse(localStorage.getItem('lm.cache.approved') || 'null'); } catch (e) { return null; }
 }
 const ADMIN_FLAG = 'lm.wasAdmin';
+function setAdminBadge(n) {
+  const tab = $('#adminTab');
+  let b = tab.querySelector('.badge');
+  if (!n) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('span'); b.className = 'badge'; tab.append(b); }
+  b.textContent = n > 99 ? '99+' : String(n);
+  b.setAttribute('aria-label', `${n} waiting for a check`);
+}
+function startPendingWatch() {
+  if (state.pendingStop || !state.store || !state.store.watchPending) return;
+  state.pendingStop = state.store.watchPending(list => {
+    const before = state.pendingLive ? state.pendingLive.map(d => d.id + d.status).join() : null;
+    state.pendingLive = list; state.pendingError = null;
+    setAdminBadge(list.length);
+    // Show new ones straight away, unless an edit form is open on the Admin page
+    if (state.tab === 'admin' && !state.adminEditing && before !== list.map(d => d.id + d.status).join()) renderAdmin();
+  }, err => {
+    console.error(err); state.pendingError = err; state.pendingLive = null;
+    if (state.tab === 'admin' && !state.adminEditing) renderAdmin();
+  });
+}
+function stopPendingWatch() {
+  if (state.pendingStop) { state.pendingStop(); state.pendingStop = null; }
+  state.pendingLive = null; setAdminBadge(0);
+}
+
 function setAdminTab(yes) {
   $('#adminTab').hidden = !yes;
   $('nav.tabs').classList.toggle('four', yes);
+  if (yes && state.store && state.store.mode !== 'offline') startPendingWatch();
+  if (!yes) stopPendingWatch();
   try { yes ? localStorage.setItem(ADMIN_FLAG, '1') : localStorage.removeItem(ADMIN_FLAG); } catch (e) { /* private mode */ }
 }
 
@@ -1174,6 +1216,15 @@ async function start() {
   // The database code is big; load it in the background instead of making everyone wait for it
   state.storeReady = openStore().then(async s => {
     state.store = s;
+    // If the sign-in changes (or finishes loading late), recheck the Admin button and page
+    let lastUser = null;
+    if (s.onUserChange) s.onUserChange(async () => {
+      const me = s.whoAmI ? await s.whoAmI() : null, key = me ? me.uid : '';
+      if (key === lastUser) return;
+      lastUser = key;
+      await refreshAdminTab();
+      if (state.tab === 'admin' && !state.adminEditing) renderAdmin();
+    });
     await loadDisplays();
     // Bring the screen up to date, unless someone is in the middle of filling something in
     const P = state.plan;

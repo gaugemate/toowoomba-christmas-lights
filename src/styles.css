@@ -152,6 +152,9 @@ input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-sea
 .mine .meta{color:var(--muted);font-weight:500}
 .pinwarn{margin:8px 0 0;padding:10px 12px;border-radius:10px;background:#fff1c7;color:#3d2c00;font-size:.98rem;font-weight:500;line-height:1.4}
 .pinwarn b{font-weight:800}
+.adminhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.adminhead .btn{min-height:44px;padding:6px 14px;font-size:1rem}
+nav.tabs .badge{position:absolute;top:4px;left:calc(50% + 6px);min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#e53935;color:#fff;font-size:.8rem;font-weight:800;line-height:22px;text-align:center;border:2px solid var(--page)}
 .allhint{background:var(--pine-soft);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:.98rem;font-weight:500;line-height:1.45}
 .allhint b{font-weight:800}
 .allhint .linkbtn{display:block;padding:6px 0 0;min-height:40px;font-size:1rem}

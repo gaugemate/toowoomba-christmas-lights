@@ -42,6 +42,7 @@ function demoStore() {
     async isAdmin() { return true; },
     async signIn() { return true; },
     async listPending() { return extra().filter(d => d.status === 'pending'); },
+    watchPending(onList) { onList(extra().filter(d => d.status === 'pending')); return () => {}; },
     async approve(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'approved' } : d))); },
     async unapprove(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'pending' } : d))); },
     async myDisplays() { return extra().filter(d => d.mine); },
@@ -62,9 +63,25 @@ async function liveStore(cfg) {
   const app = initializeApp(cfg);
   const db = fs.getFirestore(app);
   const auth = au.getAuth(app);
+  // Testing only: point at Google's local test database instead of the real one (never set in the live app)
+  if (cfg.emulators) {
+    fs.connectFirestoreEmulator(db, ...cfg.emulators.firestore);
+    au.connectAuthEmulator(auth, cfg.emulators.auth, { disableWarnings: true });
+  }
   const col = fs.collection(db, 'displays');
   const rows = snap => snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const authReady = new Promise(r => au.onAuthStateChanged(auth, () => r(), () => r()));
+  // Coming back from Google's sign-in page (used when a pop-up isn't allowed): collect that sign-in first.
+  // Only when we sent them there, and never wait more than a few seconds.
+  const REDIRECT = 'tcl.signinRedirect';
+  let wentToGoogle = false;
+  try { wentToGoogle = !!sessionStorage.getItem(REDIRECT); sessionStorage.removeItem(REDIRECT); } catch (e) { /* private mode */ }
+  const redirectDone = wentToGoogle
+    ? Promise.race([au.getRedirectResult(auth).catch(e => console.warn('Sign-in on return', e.code || e)), new Promise(r => setTimeout(r, 6000))])
+    : Promise.resolve();
+  // Wait until the saved sign-in has fully loaded (Google's own "ready" signal), so nobody is checked too early
+  const authReady = redirectDone.then(() => (auth.authStateReady ? auth.authStateReady() : new Promise(r => au.onAuthStateChanged(auth, () => r(), () => r()))))
+    .catch(() => {});
+  const userListeners = new Set();
   let adminCheck = null;
   // Whoever is signed in on this phone; if nobody, a private anonymous ID (needs Anonymous sign-in on in Firebase)
   const phoneId = async () => {
@@ -72,10 +89,12 @@ async function liveStore(cfg) {
     if (auth.currentUser) return auth.currentUser;
     try { return (await au.signInAnonymously(auth)).user; } catch (e) { console.warn('No anonymous sign-in', e.code || e); return null; }
   };
-  au.onAuthStateChanged(auth, () => { adminCheck = null; });
+  au.onAuthStateChanged(auth, () => { adminCheck = null; userListeners.forEach(f => { try { f(); } catch (e) { console.error(e); } }); });
 
   return {
     mode: 'live',
+    // Tell the app when someone signs in or out (including a sign-in that finishes loading late)
+    onUserChange(f) { userListeners.add(f); return () => userListeners.delete(f); },
     async listApproved() {
       try {
         const list = rows(await fs.getDocs(fs.query(col, fs.where('status', '==', 'approved'))));
@@ -114,19 +133,31 @@ async function liveStore(cfg) {
         await authReady;
         const u = auth.currentUser;
         if (!u || u.isAnonymous) return false;
-        try { return (await fs.getDoc(fs.doc(db, 'admins', u.uid))).exists(); } catch (e) { adminCheck = null; return false; }
+        try { return (await fs.getDoc(fs.doc(db, 'admins', u.uid))).exists(); } catch (e) { console.warn('admin check failed', e.code || e.message); adminCheck = null; return false; }
       })();
       return adminCheck;
     },
     async signIn() {
       const provider = new au.GoogleAuthProvider();
       try { await au.signInWithPopup(auth, provider); }
-      catch (e) { await au.signInWithRedirect(auth, provider); }
+      catch (e) {
+        try { sessionStorage.setItem(REDIRECT, '1'); } catch (x) { /* private mode */ }
+        await au.signInWithRedirect(auth, provider);
+      }
       adminCheck = null;
       return this.isAdmin();
     },
     async whoAmI() { await authReady; const u = auth.currentUser; return u && !u.isAnonymous ? { uid: u.uid, email: u.email } : null; },
-    async listPending() { return rows(await fs.getDocs(fs.query(col, fs.where('status', '==', 'pending')))); },
+    async listPending() { await authReady; return rows(await fs.getDocs(fs.query(col, fs.where('status', '==', 'pending')))); },
+    // Calls onList with the waiting displays now and again whenever one is added or changes; returns "stop"
+    watchPending(onList, onError) {
+      let stop = () => {}, stopped = false;
+      authReady.then(() => {
+        if (stopped) return;
+        stop = fs.onSnapshot(fs.query(col, fs.where('status', '==', 'pending')), snap => onList(rows(snap)), onError);
+      });
+      return () => { stopped = true; stop(); };
+    },
     async approve(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'approved', approvedAt: fs.serverTimestamp() }); },
     async unapprove(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'pending' }); },
     async signOut() { await au.signOut(auth); adminCheck = null; },
