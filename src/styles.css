@@ -57,7 +57,7 @@ h2{font-weight:800;font-size:1.25rem;margin:0}
 
 /* Brand bar */
 .app-header{width:100%;display:flex;justify-content:center;align-items:center;padding:12px 0 4px}
-.app-header .mark{cursor:default;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;display:flex;justify-content:center}
+.app-header .mark{width:100%;cursor:default;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;display:flex;justify-content:center}
 .app-logo{display:block;width:230px;max-width:75%;height:auto;max-height:90px;object-fit:contain;object-position:center}
 .areachip[hidden]{display:none}
 .areachip{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:6px 12px;border-radius:999px;background:var(--surface);color:var(--ink);font-weight:700;font-size:.95rem}
