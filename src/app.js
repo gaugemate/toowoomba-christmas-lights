@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN, radioStation } from './planner.js';
 import * as svc from './services.js';
 import { searchGnaf, nearestAddress } from './gnaf.js';
-import { openStore, cleanEntry } from './store.js';
+import { openStore, cleanEntry, newSeasonYear, THUMB_MAX, PHOTO_MAX } from './store.js';
 import { Guide, fmtDist, metres, bearingWords } from './guide.js';
 
 const L = window.L;
@@ -22,7 +22,10 @@ const ICON = {
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   route: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/></svg>',
-  arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
+  arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  tick: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.6"/></svg>',
+  picture: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>'
 };
 // A white card with a round icon and a heading (the spec's content card)
 const cardHead = (icon, title, extra = '') => `<div class="card-heading"><span class="card-icon">${icon}</span><h2>${title}</h2>${extra}</div>`;
@@ -56,6 +59,15 @@ const preSeason = () => state.displays.length > 0 && !state.displays.some(litTon
 const stars = n => '★'.repeat(n);
 const fmtDate = iso => { if (!iso) return ''; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }); };
 const sizeName = n => (SIZES[n] || SIZES[2]).label;
+
+// Displays this phone has ticked "Seen it" (kept on this phone only, no sign-up)
+const SEEN_KEY = 'tcl.seen';
+const seen = new Set((() => { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'); } catch (e) { return []; } })());
+function setSeen(id, yes) {
+  yes ? seen.add(id) : seen.delete(id);
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify([...seen])); } catch (e) { /* private mode */ }
+}
+const seenCount = () => state.displays.filter(d => seen.has(d.id)).length;
 
 function fmtDur(min) {
   min = Math.round(min);
@@ -103,7 +115,7 @@ function popup(html, buttons, onButton = () => {}) {
   o.innerHTML = `<div class="card arrive popup">${html}<div class="popbtns">${buttons.map(b => `<button class="btn wide ${b.cls || ''}" type="button" data-pop="${b.id}">${b.text}</button>`).join('')}</div></div>`;
   document.body.append(o);
   o.addEventListener('click', e => { const b = e.target.closest('[data-pop]'); if (b) { closePopup(); onButton(b.dataset.pop); } });
-  $('[data-pop]', o).focus();
+  $('[data-pop]', o)?.focus();
 }
 function closePopup() { const o = $('#popup'); if (o) o.remove(); }
 
@@ -125,7 +137,8 @@ function makeMap(el, { zoom = CONFIG.zoom, center = CONFIG.center } = {}) {
 function pinIcon(cls, size, text = '') {
   return L.divIcon({ className: '', html: `<div class="pin ${cls}" style="width:${size}px;height:${size}px">${text}</div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
-const lightIcon = d => pinIcon(litTonight(d) || preSeason() ? 'light' : 'off', 12 + d.size * 3);
+const lightIcon = d => (seen.has(d.id) ? pinIcon('light seen', Math.max(22, 12 + d.size * 3), ICON.tick)
+  : pinIcon(litTonight(d) || preSeason() ? 'light' : 'off', 12 + d.size * 3));
 
 /* ---------- address search box ---------- */
 // "12 Ruthven St" → "12"; "3/45 Bob St" → "3/45"; "12a Bob St" → "12a"
@@ -644,6 +657,7 @@ function onArrive() {
       <button class="btn go wide" type="button" id="arrNext">Finish</button>`, () => { P.driveAt++; endDrive(); });
   }
   const d = t.d, k = P.driveAt, last = k === r.stops.length - 1;
+  setSeen(d.id, true); // you've been there, so it's ticked off on the All lights map
   const radio = (d.features || []).includes('radio'), station = radio ? radioStation(d.notes) : '';
   speak(`You've arrived at stop ${k + 1}, ${d.address}.${station ? ` Tune your radio to ${station.replace(/\bFM\b/, 'F M').replace(/\bAM\b/, 'A M')}.` : radio ? ' Tune your car radio.' : ''} Enjoy the lights!`);
   const nextLabel = last ? (P.back ? 'Head back to the start ›' : 'Finish') : `Next stop ›`;
@@ -764,14 +778,19 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 /* =================================================================== ALL LIGHTS */
 function renderMapTab() {
   const v = $('#view-map');
+  if (state.near) return renderNearMe(v);
   const subs = suburbsWithCounts();
   const filter = state.mapFilter || '';
   const shown = state.displays.filter(d => !filter || d.suburb === filter);
   v.innerHTML = `
     <h1>All the lights</h1>
-    <p class="note">${state.displays.length} ${state.displays.length === 1 ? 'Display' : 'Displays'}. Bigger dots are bigger displays.</p>
+    <p class="note">${state.displays.length} ${state.displays.length === 1 ? 'Display' : 'Displays'}. Bigger dots are bigger displays.${seenCount() ? ` Green ticks are ones you've seen.` : ''}</p>
+    ${state.displays.length ? `<button class="btn primary wide" type="button" id="nearBtn">${ICON.locate}Near me now</button>` : ''}
     <div class="map tall" id="allMap"></div>
     <div id="sheet"></div>
+    ${state.displays.length ? '' : `<div class="card"><h2>The ${new Date().getFullYear()} lights are coming!</h2>
+      <p class="note" style="margin:0">No displays on the map yet. Got lights up? Add them so everyone can find you.</p>
+      <a class="btn go wide" href="#add">Add my lights</a></div>`}
     <select id="subFilter" aria-label="Show suburb">
       <option value="">Every suburb (${state.displays.length})</option>
       ${subs.map(([s, n]) => `<option value="${esc(s)}" ${s === filter ? 'selected' : ''}>${esc(s)} (${n})</option>`).join('')}
@@ -790,31 +809,96 @@ function renderMapTab() {
   if (shown.length) fitTo(map, shown, filter ? SUBURB_ZOOM : TOWN_ZOOM);
   else map.setView(CONFIG.center, TOWN_ZOOM);
   $('#subFilter', v).onchange = e => { state.mapFilter = e.target.value; renderMapTab(); };
+  const nb = $('#nearBtn', v);
+  if (nb) nb.onclick = () => { state.near = { hideSeen: false }; renderMapTab(); scrollTop(); };
   $('#dispList', v).onclick = e => {
     const b = e.target.closest('[data-id]'); if (!b) return;
     const d = state.displays.find(x => x.id === b.dataset.id);
     map.setView([d.lat, d.lng], 16); showSheet(d); scrollTop();
   };
+  // Came from "Near me now": open that display
+  if (state.mapFocus) {
+    const d = state.displays.find(x => x.id === state.mapFocus); state.mapFocus = null;
+    if (d) { map.setView([d.lat, d.lng], 16); showSheet(d); }
+  }
   function showSheet(d) {
     const s = $('#sheet', v);
-    s.innerHTML = `<div class="card sheet">
+    const seenBtn = () => (seen.has(d.id) ? `${ICON.tick}Seen it` : `${ICON.tick}Tick it off: I've seen it`);
+    s.innerHTML = `<div class="card sheet${d.thumb ? ' haspic' : ''}">
+      ${d.thumb ? `<img class="dphoto" id="sheetPic" src="${esc(d.thumb)}" alt="Photo of the lights at ${esc(d.address)}">` : ''}
       <button class="x" type="button" aria-label="Close">×</button>
       <div><b style="font-size:1.25rem;display:block;padding-right:50px">${esc(d.address)}</b><span class="muted" style="font-weight:600">${esc(d.suburb)}</span></div>
       <div class="sz" style="display:flex;gap:8px;flex-wrap:wrap"><span class="tag gold">${stars(d.size)} ${sizeName(d.size)}</span>
         ${d.viewing === 'walk' ? '<span class="tag">Park and walk</span>' : ''}${(d.features || []).map(f => `<span class="tag">${esc(FEATURES[f] || f)}</span>`).join('')}</div>
       ${d.notes ? `<p style="margin:0">${esc(d.notes)}</p>` : ''}
       <p class="note">${d.hours ? `Lights on ${esc(d.hours)}` : ''}${!litTonight(d) && !preSeason() ? ' · not on tonight' : ''}</p>
-      <a class="btn go wide" href="${svc.navigateUrl(d)}" target="_blank" rel="noopener">${ICON.nav}Directions</a></div>`;
+      <a class="btn go wide" href="${svc.navigateUrl(d)}" target="_blank" rel="noopener">${ICON.nav}Directions</a>
+      <button class="btn wide seenbtn" type="button" id="seenBtn" aria-pressed="${seen.has(d.id)}">${seenBtn()}</button></div>`;
     $('.x', s).onclick = () => { s.innerHTML = ''; };
+    $('#seenBtn', s).onclick = e => {
+      const yes = !seen.has(d.id); setSeen(d.id, yes);
+      e.currentTarget.setAttribute('aria-pressed', yes); e.currentTarget.innerHTML = seenBtn();
+      const m = markers.get(d.id); if (m) m.setIcon(lightIcon(d));
+      $('#dispList', v).innerHTML = listHTML(shown);
+      if (yes) toast(`Ticked: ${seenCount()} of ${state.displays.length} seen`);
+    };
+    // The small preview shows at once; the full photo replaces it when it arrives
+    if (d.thumb && state.store) state.store.getPhoto(d.id).then(img => { const el = $('#sheetPic', s); if (img && el) el.src = img; });
   }
 }
 
+// ---------- Near me now: the displays closest to where you are, nearest first ----------
+function renderNearMe(v) {
+  const N = state.near;
+  v.innerHTML = `<button class="back" type="button" id="nearBack">‹ Back to the map</button>
+    <h1>Near me now</h1><p class="note" id="nearNote">Finding where you are…</p><div id="nearOut"></div>`;
+  $('#nearBack', v).onclick = () => { state.near = null; renderMapTab(); scrollTop(); };
+  const draw = () => {
+    if (state.near !== N || state.tab !== 'map') return;
+    let list = state.displays.map(d => ({ d, m: metres(N.me, [d.lat, d.lng]) * 1.3 })).sort((a, b) => a.m - b.m); // roughly, along the roads
+    const far = list.length && list[0].m > 60000;
+    if (N.hideSeen) list = list.filter(x => !seen.has(x.d.id));
+    list = list.slice(0, 20);
+    $('#nearNote', v).textContent = far ? "You're a long way from Toowoomba, but here are the closest." : 'Closest first, from where you are now. Tap one to see it on the map.';
+    const pics = list.some(x => x.d.thumb);
+    $('#nearOut', v).innerHTML = `
+      <div class="seg" role="group" aria-label="Which displays" style="margin-bottom:12px">
+        <button type="button" data-near="all" aria-pressed="${!N.hideSeen}">Closest</button>
+        <button type="button" data-near="hide" aria-pressed="${!!N.hideSeen}">Hide ones I've seen</button></div>
+      <ul class="list" id="nearList">${list.map(({ d, m }) => { const f = fmtDist(m);
+        return `<li><button class="lrow${pics ? ' withpic' : ''}" type="button" data-id="${esc(d.id)}">${pics ? thumbHTML(d) : ''}
+          <span><b>${esc(d.address)}</b><small><span class="dist">${f.n} ${f.u}</span> · about ${driveMins(m)} min drive · ${esc(d.suburb)}</small></span>
+          ${seen.has(d.id) ? `<span class="seentick" aria-label="Seen">${ICON.tick}</span>` : `<span class="stars">${stars(d.size)}</span>`}</button></li>`; }).join('')
+        || `<li class="group">${N.hideSeen ? "You've seen them all. Nice work!" : 'No displays yet'}</li>`}</ul>
+      <button class="btn wide" type="button" id="nearAgain" style="margin-top:12px">${ICON.locate}Update for where I am now</button>`;
+    $$('[data-near]', v).forEach(b => b.onclick = () => { N.hideSeen = b.dataset.near === 'hide'; draw(); });
+    $('#nearList', v).onclick = e => {
+      const b = e.target.closest('[data-id]'); if (!b) return;
+      state.near = null; state.mapFocus = b.dataset.id; renderMapTab(); scrollTop();
+    };
+    $('#nearAgain', v).onclick = () => { renderNearMe(v); };
+  };
+  if (!navigator.geolocation) { $('#nearNote', v).textContent = "This phone can't share where you are."; return; }
+  navigator.geolocation.getCurrentPosition(p => { N.me = [p.coords.latitude, p.coords.longitude]; draw(); }, () => {
+    if (state.near !== N) return;
+    $('#nearNote', v).textContent = "We couldn't find where you are. Check Location is turned on for your browser (on iPhone: Settings, Privacy & Security, Location Services, Safari Websites), then try again.";
+    $('#nearOut', v).innerHTML = `<button class="btn primary wide" type="button" id="nearRetry">${ICON.locate}Try again</button>`;
+    $('#nearRetry', v).onclick = () => renderNearMe(v);
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+}
+
+// Rough minutes by car: slow in town streets, quicker on the open road
+const driveMins = m => Math.max(1, Math.round(m <= 3000 ? m / 400 : 7.5 + (m - 3000) / 1000));
+
+const thumbHTML = d => (d.thumb ? `<img class="lthumb" src="${esc(d.thumb)}" alt="">` : `<span class="lthumb none">${ICON.picture}</span>`);
+
 function listHTML(list) {
   if (!list.length) return '<li class="group">No displays yet</li>';
+  const pics = list.some(d => d.thumb); // photo column only once some displays have photos
   const by = new Map();
   for (const d of list) { if (!by.has(d.suburb)) by.set(d.suburb, []); by.get(d.suburb).push(d); }
   return [...by.keys()].sort().map(s => `<li class="group">${esc(s)}</li>` + by.get(s).sort((a, b) => b.size - a.size).map(d =>
-    `<li><button class="lrow" type="button" data-id="${esc(d.id)}"><span><b>${esc(d.address)}</b><small>${sizeName(d.size)}${d.notes ? ' · ' + esc(d.notes) : ''}</small></span><span class="stars">${stars(d.size)}</span></button></li>`).join('')).join('');
+    `<li><button class="lrow${pics ? ' withpic' : ''}" type="button" data-id="${esc(d.id)}">${pics ? thumbHTML(d) : ''}<span><b>${esc(d.address)}</b><small>${sizeName(d.size)}${d.notes ? ' · ' + esc(d.notes) : ''}</small></span>${seen.has(d.id) ? `<span class="seentick" aria-label="Seen">${ICON.tick}</span>` : `<span class="stars">${stars(d.size)}</span>`}</button></li>`).join('')).join('');
 }
 
 /* =================================================================== ADD MY LIGHTS */
@@ -823,11 +907,40 @@ function listHTML(list) {
 // Changing the address or notes of an approved display sends it back for a check (only when not an admin).
 const MAJOR = ['address', 'suburb', 'lat', 'lng', 'notes'];
 
+// A photo from the camera or library, made small enough to send: the full photo (up to about 1000 pixels
+// across, under 350 KB) and a small preview for lists (128 × 96). Done on the phone, so nothing big is uploaded.
+async function photoFromFile(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const W = img.naturalWidth, H = img.naturalHeight;
+    if (!W || !H) throw new Error('empty picture');
+    const draw = (w, h, sx, sy, sw, sh, q) => {
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+      return c.toDataURL('image/jpeg', q);
+    };
+    let side = 1024, q = 0.72, image = '';
+    for (let k = 0; k < 10; k++) {
+      const s = Math.min(1, side / Math.max(W, H));
+      image = draw(Math.round(W * s), Math.round(H * s), 0, 0, W, H, q);
+      if (image.length <= PHOTO_MAX) break;
+      q -= 0.08; if (q < 0.45) { side = Math.round(side * 0.8); q = 0.65; }
+    }
+    const r = Math.min(W / 4, H / 3); // the middle of the photo, 4:3
+    let thumb = '', tq = 0.62;
+    do { thumb = draw(128, 96, (W - r * 4) / 2, (H - r * 3) / 2, r * 4, r * 3, tq); tq -= 0.1; } while (thumb.length > THUMB_MAX && tq > 0.2);
+    if (!image.startsWith('data:image/jpeg') || image.length > PHOTO_MAX || thumb.length > THUMB_MAX) throw new Error('could not shrink');
+    return { image, thumb };
+  } finally { URL.revokeObjectURL(url); }
+}
+
 function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
   const d = initial || {};
   const F = {
     place: initial ? { title: d.address, line2: d.suburb || '', suburb: d.suburb || '', lat: d.lat, lng: d.lng, hasNumber: true } : null,
-    size: d.size || 0, features: new Set(d.features || []), viewing: d.viewing || 'drive'
+    size: d.size || 0, features: new Set(d.features || []), viewing: d.viewing || 'drive',
+    photo: undefined // undefined = unchanged, null = taken off, { image, thumb } = a new one
   };
   const [hOn, hOff] = String(d.hours || '7pm – 10pm').split(/\s*–\s*/);
   const heading = mode === 'new' ? 'Add your Christmas lights' : mode === 'admin' ? 'Edit this display' : 'Edit your display';
@@ -874,6 +987,12 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
             <div class="field"><label for="hFrom">Lights on</label><select id="hFrom">${[...new Set([...HOURS_FROM, hOn])].map(h => `<option ${h === hOn ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
             <div class="field"><label for="hTo">Lights off</label><select id="hTo">${[...new Set([...HOURS_TO, hOff || '10pm'])].map(h => `<option ${h === (hOff || '10pm') ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
           </div>
+        </div>
+        <div class="card" id="photoCard">
+          ${cardHead(ICON.camera, 'Add a photo <span class="muted" style="font-weight:600;font-size:1rem">(optional)</span>')}
+          <div id="photoBox"></div>
+          <input type="file" accept="image/*" capture="environment" id="photoCam" hidden>
+          <input type="file" accept="image/*" id="photoPick" hidden>
         </div>
         <div class="card">
           <div class="field"><label for="notes">Anything people should know? <span class="muted" style="font-weight:600">(optional)</span></label>
@@ -935,6 +1054,37 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
   };
   drawAddr();
 
+  // ---- The photo
+  const photoBox = $('#photoBox', v);
+  let fullPhoto = null; // the existing full photo, once loaded (editing)
+  const drawPhoto = () => {
+    const src = F.photo ? F.photo.image : F.photo === null ? null : (fullPhoto || d.thumb || null);
+    photoBox.innerHTML = src
+      ? `<img class="dphoto" id="photoPrev" src="${esc(src)}" alt="Your photo">
+         <p class="note" style="margin:0">${F.photo ? (mode === 'admin' ? 'This photo will show once you save.' : "Looks great! We'll check it before it shows on the map.") : 'This is the photo people see.'}</p>
+         <div class="row2"><button class="btn" type="button" data-ph="cam">${ICON.camera}Retake</button><button class="btn danger" type="button" data-ph="remove">Remove</button></div>
+         <button class="linkbtn" type="button" data-ph="pick">Choose a different photo</button>`
+      : `<p class="note" style="margin:0">A night-time photo with the lights on helps people choose where to go.</p>
+         <button class="btn go wide" type="button" data-ph="cam">${ICON.camera}Take a photo</button>
+         <button class="btn wide" type="button" data-ph="pick">${ICON.picture}Choose from my photos</button>
+         <p class="note" style="margin:0">Please keep people's faces and car number plates out of the photo. We check every photo before it shows.</p>`;
+  };
+  drawPhoto();
+  if (d.thumb && d.id && state.store) state.store.getPhoto(d.id).then(img => { if (img && F.photo === undefined) { fullPhoto = img; drawPhoto(); } });
+  photoBox.onclick = e => {
+    const b = e.target.closest('[data-ph]'); if (!b) return;
+    if (b.dataset.ph === 'remove') { F.photo = null; drawPhoto(); return; }
+    const inp = $(b.dataset.ph === 'cam' ? '#photoCam' : '#photoPick', v); inp.value = ''; inp.click();
+  };
+  for (const id of ['#photoCam', '#photoPick']) $(id, v).onchange = async e => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    photoBox.innerHTML = '<p class="note" style="margin:0">Getting your photo ready…</p>';
+    try { F.photo = await photoFromFile(file); }
+    catch (ex) { console.warn(ex); toast("That photo couldn't be used. Try another, or take a new one."); }
+    drawPhoto();
+    $('#photoCard', v).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   $$('[data-size]', v).forEach(b => b.onclick = () => { F.size = +b.dataset.size; $$('[data-size]', v).forEach(x => x.setAttribute('aria-checked', x === b)); });
   $('#featChips', v).onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; const f = b.dataset.f; F.features.has(f) ? F.features.delete(f) : F.features.add(f); b.setAttribute('aria-pressed', F.features.has(f)); };
   $$('[data-view]', v).forEach(b => b.onclick = () => { F.viewing = b.dataset.view; $$('[data-view]', v).forEach(x => x.setAttribute('aria-pressed', x === b)); });
@@ -974,15 +1124,27 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
       size: F.size, features: [...F.features], viewing: F.viewing, from, until,
       hours: `${$('#hFrom', v).value} – ${$('#hTo', v).value}`, notes: $('#notes', v).value
     };
+    const photoChanged = F.photo !== undefined;
+    if (photoChanged) entry.thumb = F.photo ? F.photo.thumb : '';
     try {
       const S = await state.storeReady;
-      if (mode === 'new') { await S.submit(entry); clearToasts(); onSaved && onSaved({}); return; }
+      if (mode === 'new') {
+        if (F.photo) status.textContent = 'Sending your display and photo…';
+        await S.submit(entry, F.photo ? F.photo.image : null); clearToasts(); onSaved && onSaved({}); return;
+      }
       const before = cleanEntry(d), after = cleanEntry(entry);
-      const major = MAJOR.some(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+      // A new photo is checked first, like a new address; taking a photo off isn't
+      const major = MAJOR.some(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])) || !!(photoChanged && F.photo);
       const newStatus = mode === 'admin' ? d.status : (d.status === 'approved' && !major ? 'approved' : 'pending');
       await S.update(d.id, entry, newStatus);
+      let photoErr = false;
+      if (photoChanged) {
+        try { await S.setPhoto(d.id, F.photo ? F.photo.image : null, d.ownerUid); }
+        catch (ex) { console.warn(ex); photoErr = true; }
+      }
       clearToasts();
       onSaved && onSaved({ backToCheck: d.status === 'approved' && newStatus === 'pending' });
+      if (photoErr) toast("Saved, but the photo didn't go through. Edit it and try the photo again.");
     } catch (ex) {
       console.error(ex); btn.disabled = false;
       err(mode === 'new' ? "Couldn't send just now. Check you have signal and try again." : "Couldn't save just now. Check you have signal and try again.");
@@ -1006,7 +1168,7 @@ async function renderAdd() {
       onSaved: async r => {
         A.editing = null; await loadDisplays(); renderAdd(); scrollTop();
         popup(r.backToCheck
-          ? `<h2>Changes saved</h2><p style="margin:0">You changed the address or notes, so your display will be back on the map once it's been checked.</p>`
+          ? `<h2>Changes saved</h2><p style="margin:0">You changed the address, notes or photo, so your display will be back on the map once it's been checked.</p>`
           : `<h2>Changes saved</h2><p style="margin:0">Your display has been updated. Thanks for lighting up Toowoomba!</p>`,
           [{ id: 'ok', text: 'OK', cls: 'go' }]);
       }
@@ -1025,6 +1187,7 @@ async function renderAdd() {
           : `<h1>You've been added to the list!</h1><p style="margin:0">Please wait while an admin approves your display. It will show on the map once it's been checked.</p>`}
         <div class="myaddr">${ICON.pin}<div><b>${esc(d.address)}</b><small>${esc(d.suburb || '')}</small></div>
           <span class="tag ${d.status === 'approved' ? 'gold' : ''}">${d.status === 'approved' ? 'On the map' : 'Waiting for a check'}</span></div>
+        ${d.thumb ? `<img class="minipic" src="${esc(d.thumb)}" alt="Your photo">` : ''}
         ${displaySummary(d)}
         <div class="row2"><button class="btn" type="button" data-mine="edit">Edit</button><button class="btn danger" type="button" data-mine="remove">Remove</button></div>
         ${d.status === 'approved' ? '<a class="linkbtn" href="#map">See it on the map</a>' : ''}
@@ -1119,6 +1282,8 @@ async function renderAdmin() {
         <p class="meta">${stars(d.size)} ${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'} · ${esc(d.hours)}<br>${esc(fmtDate(d.from))} to ${esc(fmtDate(d.until))}${(d.features || []).length ? '<br>' + d.features.map(f => esc(FEATURES[f] || f)).join(', ') : ''}${d.notes ? '<br>“' + esc(d.notes) + '”' : ''}</p>
         ${(() => { const twin = [...state.displays, ...pending].find(o => o.id !== d.id && nearSameSpot(o, d));
           return twin ? `<p class="pinwarn"><b>Same map spot as ${esc(twin.address)}.</b> The dot was probably left at the middle of the street. Tap Edit and drag it onto the right house before approving.</p>` : ''; })()}
+        ${d.thumb ? `<div class="adminpic"><span class="tag gold">Photo to check</span><img class="dphoto" data-photo="${esc(d.id)}" src="${esc(d.thumb)}" alt="Photo of ${esc(d.address)}"></div>
+          <button class="btn wide" type="button" data-act="nophoto">Remove the photo (keep the display)</button>` : ''}
         <a class="linkbtn" href="https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}" target="_blank" rel="noopener">Check the spot on Google Maps</a>
         <button class="btn" type="button" data-act="edit">Edit</button>
         <div class="row2"><button class="btn danger" type="button" data-act="reject">Reject</button><button class="btn go" type="button" data-act="approve" style="min-height:52px;font-size:1.05rem">Approve</button></div>
@@ -1132,9 +1297,23 @@ async function renderAdmin() {
       </button>
       <div class="rowopts" id="opts-${esc(d.id)}"${open ? '' : ' hidden'}>
       <small class="rowmeta">${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${d.hours ? ' · ' + esc(d.hours) : ''}</small>
+      ${d.thumb ? `<img class="minipic" src="${esc(d.thumb)}" alt=""><button class="linkbtn" type="button" data-nophoto="${esc(d.id)}">Remove the photo</button>` : ''}
       <span class="adminbtns">${S.update && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-edit="${esc(d.id)}">Edit</button>` : ''}${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" type="button" data-remove="${esc(d.id)}">Remove</button></span></div></li>`; }).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
     ${S.signOut ? '<button class="linkbtn on-page" type="button" id="signOut" style="color:#fff">Sign out of admin on this phone</button>' : ''}
-    ${S.diagnose ? '<button class="btn wide" type="button" id="diagnose">Check the database</button><div id="diagOut"></div>' : ''}`;
+    ${S.diagnose ? '<button class="btn wide" type="button" id="diagnose">Check the database</button><div id="diagOut"></div>' : ''}
+    ${S.startNewYear ? `<div class="card newseason"><h2>New season</h2>
+      <p class="note" style="margin:0">When Christmas is over, clear the map so addresses don't stay online all year. A copy of every display is kept in the database's archive first. People add their lights again next season.</p>
+      <button class="btn wide redbtn" type="button" id="newYear">Start a new year (${newSeasonYear()})</button></div>` : ''}`;
+  // Full-size photos on the waiting cards, as they arrive
+  // (a brand-new display can arrive a moment before its photo has finished sending, so try again for a few seconds)
+  $$('[data-photo]', v).forEach(img => {
+    const get = tries => S.getPhoto(img.dataset.photo).then(src => {
+      if (src) img.src = src; else if (tries > 0 && img.isConnected) setTimeout(() => get(tries - 1), 2000);
+    });
+    get(5);
+  });
+  const ny = $('#newYear', v);
+  if (ny) ny.onclick = () => newYearSteps(S, pending.length);
   $('#copyLink', v).onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch (e) { $('#addLink', v).select(); toast('Select the link and copy it'); } };
   $('#refreshAdmin', v).onclick = async () => {
     const b = $('#refreshAdmin', v); b.disabled = true; b.textContent = 'Refreshing…';
@@ -1157,7 +1336,8 @@ async function renderAdmin() {
     if (b.dataset.act === 'edit') return adminEdit(pending.find(x => x.id === c.dataset.id));
     b.disabled = true;
     try {
-      if (b.dataset.act === 'approve') { await S.approve(c.dataset.id); toast('Approved: it\'s on the map'); }
+      if (b.dataset.act === 'nophoto') { await S.removePhoto(c.dataset.id); toast('Photo removed'); state.pendingLive = null; }
+      else if (b.dataset.act === 'approve') { await S.approve(c.dataset.id); toast('Approved: it\'s on the map'); }
       else { await S.reject(c.dataset.id); toast('Rejected and removed'); }
       await loadDisplays(); renderAdmin();
     } catch (ex) { b.disabled = false; toast("That didn't work. Try again."); }
@@ -1173,6 +1353,13 @@ async function renderAdmin() {
     }
     const ed = e.target.closest('[data-edit]');
     if (ed) return adminEdit(live.find(x => x.id === ed.dataset.edit));
+    const np = e.target.closest('[data-nophoto]');
+    if (np) {
+      np.disabled = true;
+      try { await S.removePhoto(np.dataset.nophoto); await loadDisplays(); renderAdmin(); toast('Photo removed'); }
+      catch (ex) { np.disabled = false; toast("That didn't work. Try again."); }
+      return;
+    }
     const u = e.target.closest('[data-undo]');
     if (u) {
       u.disabled = true;
@@ -1200,6 +1387,51 @@ async function renderAdmin() {
   if (so) so.onclick = async () => { await S.signOut(); setAdminTab(false); location.hash = 'plan'; toast('Signed out'); };
 }
 
+// ---------- Start a new year: several checks, then copy everything to the archive and clear the map ----------
+function newYearSteps(S, waiting) {
+  const year = newSeasonYear(), onMap = state.displays.length;
+  const link = location.origin + location.pathname + '#add';
+  const failed = ex => {
+    console.error(ex);
+    popup(`<h2>That didn't finish</h2><p style="margin:0">Nothing has been lost: every display is either still on the map or already saved in the archive.</p>
+      <p style="margin:0">Check your signal, then press <b>Start a new year</b> again.</p>`, [{ id: 'ok', text: 'OK', cls: 'go' }]);
+    loadDisplays().then(() => { if (state.tab === 'admin') renderAdmin(); });
+  };
+  const run = async () => {
+    popup(`<h2>Clearing the map…</h2><div class="progress"><i id="nyBar" style="width:3%"></i></div>
+      <p class="note" id="nyText" style="margin:0">Saving a copy first. Keep the app open.</p>`, []);
+    try {
+      const r = await S.startNewYear(year, (done, total) => {
+        const bar = $('#nyBar'), t = $('#nyText');
+        if (bar) bar.style.width = Math.max(3, Math.round(done / Math.max(total, 1) * 100)) + '%';
+        if (t) t.textContent = `${done} of ${total} removed. Keep the app open.`;
+      });
+      state.displays = []; state.pendingLive = null; setAdminBadge(0);
+      await loadDisplays();
+      if (state.tab === 'admin') renderAdmin();
+      popup(`<h2>Done! The map is clear for ${year}.</h2>
+        <p style="margin:0">A copy of ${r.archived === 1 ? 'the 1 display' : `all ${r.archived} displays`} is saved in the archive (${year - 1}).</p>
+        <p style="margin:0"><b>Next:</b> post the "Add your lights" link on Facebook when you're ready for people to add their displays again.</p>`,
+        [{ id: 'copy', text: 'Copy the Add my lights link', cls: 'go' }, { id: 'ok', text: 'OK' }],
+        async id => { if (id === 'copy') { try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch (e) { toast(link); } } });
+    } catch (ex) { failed(ex); }
+  };
+  const confirmYear = (wrong = false) => {
+    popup(`<h2>Are you sure?</h2><p style="margin:0">This <b>can't be undone</b>. ${onMap + waiting === 1 ? 'The 1 address comes' : `All ${onMap + waiting} addresses come`} off the map and out of the waiting list.</p>
+      ${wrong ? `<p class="status err" style="margin:0">That wasn't ${year}, so nothing was cleared.</p>` : ''}
+      <div class="field"><label for="nyYear">Type <b>${year}</b> to confirm</label><input id="nyYear" type="text" inputmode="numeric" autocomplete="off" maxlength="4"></div>`,
+      [{ id: 'go', text: `Clear the map for ${year}`, cls: 'redbtn' }, { id: 'no', text: 'Cancel' }],
+      id => { if (id !== 'go') return; if (inp.value.trim() === String(year)) run(); else confirmYear(true); });
+    const inp = $('#nyYear'); setTimeout(() => inp && inp.focus(), 50);
+  };
+  popup(`<h2>Start a new year (${year})?</h2>
+    <p style="margin:0">This takes <b>every display</b> off the map: <b>${onMap}</b> on the map and <b>${waiting}</b> waiting for a check.</p>
+    <p style="margin:0">Anyone who opens the app will see an <b>empty map</b> until people add their lights again.</p>
+    <p class="note" style="margin:0">A copy of every display is saved in the database's archive first, just in case.</p>`,
+    [{ id: 'keep', text: 'Keep everything', cls: 'primary' }, { id: 'go', text: 'Yes, go on', cls: 'danger' }],
+    id => { if (id === 'go') confirmYear(); });
+}
+
 /* =================================================================== shell */
 function scrollTop() { $('#scroller').scrollTo({ top: 0 }); }
 
@@ -1216,6 +1448,7 @@ new MutationObserver(() => requestAnimationFrame(() => fitNumbers())).observe(do
 function show(tab, { keepScroll = false } = {}) {
   closePopup();
   if (tab !== 'admin') state.adminEditing = false;
+  if (tab !== 'map') state.near = null;
   if (!['plan', 'map', 'add', 'admin'].includes(tab)) tab = 'plan';
   state.tab = tab;
   for (const t of ['plan', 'map', 'add', 'admin']) $(`#view-${t}`).hidden = t !== tab;

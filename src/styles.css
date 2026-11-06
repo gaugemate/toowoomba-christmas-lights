@@ -323,3 +323,23 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
   nav.tabs button{font-size:11px}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+
+/* ---------- Photos, "Seen it" ticks, Near me now, Start a new year ---------- */
+.dphoto{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:14px;background:var(--green-light)}
+.sheet.haspic .x{top:18px;right:18px;background:rgba(255,255,255,.92)}
+.minipic{display:block;width:128px;height:96px;object-fit:cover;border-radius:10px}
+.adminpic{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.seenbtn[aria-pressed="true"]{background:var(--green-primary);border-color:var(--green-primary);color:#fff}
+.pin.seen{background:#1b8a3c;border-color:#fff}
+.pin.seen svg{width:70%;height:70%;color:#fff}
+.list .lrow.withpic{grid-template-columns:56px 1fr auto}
+.lthumb{width:56px;height:42px;border-radius:8px;object-fit:cover;display:flex;align-items:center;justify-content:center;background:var(--green-light);color:var(--green-primary)}
+.lthumb svg{width:22px;height:22px}
+.seentick{width:30px;height:30px;border-radius:50%;background:#1b8a3c;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.seentick svg{width:20px;height:20px}
+.dist{color:var(--green-primary);font-weight:800}
+#nearBtn{margin-bottom:4px}
+.btn.redbtn{background:#c62828;border-color:#c62828;color:#fff;min-height:56px;font-size:1.1rem;font-weight:700}
+.newseason{margin-top:22px}
+.progress{height:12px;border-radius:6px;background:#eee;overflow:hidden}
+.progress i{display:block;height:100%;background:#c62828;transition:width .3s}

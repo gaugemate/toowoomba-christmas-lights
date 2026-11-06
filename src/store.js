@@ -10,7 +10,14 @@ const LS = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } }
 };
 
-export const FIELDS = ['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing', 'from', 'until', 'hours', 'notes'];
+export const FIELDS = ['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing', 'from', 'until', 'hours', 'notes', 'thumb'];
+
+// A photo's small preview (kept in the display) and the full photo (kept separately): JPEG pictures only
+export const THUMB_MAX = 12000, PHOTO_MAX = 350000;
+const isJpeg = (v, max) => typeof v === 'string' && v.length <= max && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(v);
+
+// The season a "Start a new year" begins: from July it's next year's, before July it's this year's
+export const newSeasonYear = (now = new Date()) => (now.getMonth() >= 6 ? now.getFullYear() + 1 : now.getFullYear());
 
 export function cleanEntry(d) {
   const s = (v, max) => String(v || '').trim().slice(0, max);
@@ -20,7 +27,8 @@ export function cleanEntry(d) {
     size: Math.min(4, Math.max(1, Math.round(Number(d.size) || 2))),
     features: (d.features || []).slice(0, 10).map(f => s(f, 20)),
     viewing: d.viewing === 'walk' ? 'walk' : 'drive',
-    from: s(d.from, 10), until: s(d.until, 10), hours: s(d.hours, 30), notes: s(d.notes, 200)
+    from: s(d.from, 10), until: s(d.until, 10), hours: s(d.hours, 30), notes: s(d.notes, 200),
+    thumb: isJpeg(d.thumb, THUMB_MAX) ? d.thumb : ''
   };
 }
 
@@ -28,16 +36,34 @@ function demoStore() {
   const extra = () => LS.get('lm.demo.entries', []);
   const save = list => LS.set('lm.demo.entries', list);
   const removed = () => new Set(LS.get('lm.demo.removed', []));
+  const photos = () => LS.get('lm.demo.photos', {});
+  const setPhoto = (id, image) => { const all = photos(); if (image) all[id] = image; else delete all[id]; LS.set('lm.demo.photos', all); };
   return {
     mode: 'demo',
+    async getPhoto(id) { return photos()[id] || null; },
+    async setPhoto(id, image) { setPhoto(id, isJpeg(image, PHOTO_MAX) ? image : null); },
+    async removePhoto(id) {
+      setPhoto(id, null);
+      save(extra().map(d => (d.id === id ? { ...d, thumb: '' } : d)));
+    },
+    // Copy every display into an archive on this phone, then clear the map
+    async startNewYear(year, onProgress = () => {}) {
+      const all = [...SAMPLE_DISPLAYS.filter(d => !removed().has(d.id)), ...extra()];
+      const arch = LS.get('lm.demo.archive', {}); arch[year - 1] = all; LS.set('lm.demo.archive', arch);
+      LS.set('lm.demo.removed', SAMPLE_DISPLAYS.map(d => d.id)); save([]); LS.set('lm.demo.photos', {});
+      onProgress(all.length, all.length);
+      return { archived: all.length };
+    },
     async listApproved() {
       const gone = removed();
       return SAMPLE_DISPLAYS.filter(d => !gone.has(d.id)).concat(extra().filter(d => d.status === 'approved'));
     },
-    async submit(entry) {
-      const list = extra();
-      list.push({ ...cleanEntry(entry), id: 'u' + Date.now().toString(36), status: 'pending', createdAt: Date.now(), mine: true });
+    async submit(entry, photo) {
+      const list = extra(), id = 'u' + Date.now().toString(36);
+      list.push({ ...cleanEntry(entry), id, status: 'pending', createdAt: Date.now(), mine: true });
       save(list);
+      if (photo) setPhoto(id, photo);
+      return id;
     },
     async isAdmin() { return true; },
     async signIn() { return true; },
@@ -46,9 +72,13 @@ function demoStore() {
     async approve(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'approved' } : d))); },
     async unapprove(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'pending' } : d))); },
     async myDisplays() { return extra().filter(d => d.mine); },
-    async update(id, entry, status) { save(extra().map(d => (d.id === id ? { ...d, ...cleanEntry(entry), status, updatedAt: Date.now() } : d))); },
-    async reject(id) { save(extra().filter(d => d.id !== id)); },
+    async update(id, entry, status) {
+      const c = cleanEntry(entry); if (!('thumb' in entry)) delete c.thumb;
+      save(extra().map(d => (d.id === id ? { ...d, ...c, status, updatedAt: Date.now() } : d)));
+    },
+    async reject(id) { save(extra().filter(d => d.id !== id)); setPhoto(id, null); },
     async remove(id) {
+      setPhoto(id, null);
       if (id.startsWith('s')) { const g = removed(); g.add(id); LS.set('lm.demo.removed', [...g]); }
       else save(extra().filter(d => d.id !== id));
     }
@@ -106,17 +136,63 @@ async function liveStore(cfg) {
         throw e;
       }
     },
-    async submit(entry) {
+    async submit(entry, photo) {
       const data = { ...cleanEntry(entry), status: 'pending', createdAt: fs.serverTimestamp() };
       const u = await phoneId();
-      if (u) data.ownerUid = u.uid;
-      try { await fs.addDoc(col, data); }
+      if (u) data.ownerUid = u.uid; else data.thumb = ''; // a photo needs this phone's ID, so it can be checked first
+      if (!data.thumb) delete data.thumb;
+      let ref;
+      try { ref = await fs.addDoc(col, data); }
       catch (e) {
-        // Older database rules don't know about ownerUid yet: send it without, so nobody is ever turned away
-        if (!data.ownerUid || e.code !== 'permission-denied') throw e;
-        delete data.ownerUid;
-        await fs.addDoc(col, data);
+        // Older database rules don't know about photos or ownerUid yet: send it without them, so nobody is ever turned away
+        if (e.code !== 'permission-denied' || (!data.ownerUid && !data.thumb)) throw e;
+        delete data.thumb; photo = null;
+        try { ref = await fs.addDoc(col, data); }
+        catch (e2) { if (!data.ownerUid || e2.code !== 'permission-denied') throw e2; delete data.ownerUid; ref = await fs.addDoc(col, data); }
       }
+      if (photo && data.thumb && data.ownerUid) {
+        try { await this.setPhoto(ref.id, photo, data.ownerUid); }
+        catch (e) { console.warn('The photo could not be saved', e.code || e); } // the display itself is in
+      }
+      return ref.id;
+    },
+    async getPhoto(id) {
+      try { const s = await fs.getDoc(fs.doc(db, 'photos', id)); return s.exists() ? s.data().image : null; }
+      catch (e) { return null; }
+    },
+    // Put up (or replace) the full photo; no photo deletes it
+    async setPhoto(id, image, ownerUid) {
+      const ref = fs.doc(db, 'photos', id);
+      if (!isJpeg(image, PHOTO_MAX)) { await fs.deleteDoc(ref); return; }
+      const u = await phoneId();
+      await fs.setDoc(ref, { image, ownerUid: ownerUid || (u ? u.uid : ''), updatedAt: fs.serverTimestamp() });
+    },
+    // Admin: take a display's photo off, keeping the display
+    async removePhoto(id) {
+      await fs.updateDoc(fs.doc(db, 'displays', id), { thumb: '' });
+      await fs.deleteDoc(fs.doc(db, 'photos', id));
+    },
+    // Admin: copy every display (on the map and waiting) into archive/<last year>, then clear them all.
+    // Nothing is deleted unless the copy worked first.
+    async startNewYear(year, onProgress = () => {}) {
+      const all = (await fs.getDocs(col)).docs;
+      const arch = String(year - 1), total = all.length;
+      const chunks = (list, n) => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
+      for (const part of chunks(all, 200)) {
+        const b = fs.writeBatch(db);
+        part.forEach(d => b.set(fs.doc(db, 'archive', arch, 'displays', d.id), { ...d.data(), archivedAt: fs.serverTimestamp() }));
+        await b.commit();
+      }
+      await fs.setDoc(fs.doc(db, 'archive', arch), { season: arch, displays: total, clearedAt: fs.serverTimestamp(), newSeason: String(year) }, { merge: true });
+      let done = 0;
+      for (const part of chunks(all, 200)) {
+        const b = fs.writeBatch(db);
+        part.forEach(d => { b.delete(d.ref); b.delete(fs.doc(db, 'photos', d.id)); });
+        await b.commit();
+        done += part.length; onProgress(done, total);
+      }
+      LS.set('lm.cache.approved', []);
+      return { archived: total };
     },
     async myDisplays() {
       await authReady;
@@ -125,7 +201,9 @@ async function liveStore(cfg) {
       try { return rows(await fs.getDocs(fs.query(col, fs.where('ownerUid', '==', u.uid)))); } catch (e) { return []; }
     },
     async update(id, entry, status) {
-      await fs.updateDoc(fs.doc(db, 'displays', id), { ...cleanEntry(entry), status, updatedAt: fs.serverTimestamp() });
+      const data = { ...cleanEntry(entry), status, updatedAt: fs.serverTimestamp() };
+      if (!('thumb' in entry)) delete data.thumb; // leave the photo as it was
+      await fs.updateDoc(fs.doc(db, 'displays', id), data);
     },
     isAdmin() {
       // Remembered for this signed-in person, so the check happens once rather than on every screen
@@ -186,8 +264,9 @@ async function liveStore(cfg) {
       });
       return out;
     },
-    async reject(id) { await fs.deleteDoc(fs.doc(db, 'displays', id)); },
-    async remove(id) { await fs.deleteDoc(fs.doc(db, 'displays', id)); }
+    // Removing a display takes its photo with it (the photo first, while this phone can still prove it's theirs)
+    async reject(id) { await fs.deleteDoc(fs.doc(db, 'photos', id)).catch(() => {}); await fs.deleteDoc(fs.doc(db, 'displays', id)); },
+    async remove(id) { await fs.deleteDoc(fs.doc(db, 'photos', id)).catch(() => {}); await fs.deleteDoc(fs.doc(db, 'displays', id)); }
   };
 }
 
@@ -199,7 +278,7 @@ function offlineStore() {
     mode: 'offline',
     async listApproved() { return LS.get('lm.cache.approved', []); },
     async myDisplays() { return []; },
-    update: fail,
+    update: fail, getPhoto: async () => null, setPhoto: fail, removePhoto: fail, startNewYear: fail,
     submit: fail, signIn: fail, listPending: fail, approve: fail, reject: fail, remove: fail,
     async isAdmin() { return false; },
     async whoAmI() { return null; }
