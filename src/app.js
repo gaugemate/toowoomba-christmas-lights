@@ -2,6 +2,7 @@
 import { CONFIG } from './config.js';
 import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN } from './planner.js';
 import * as svc from './services.js';
+import { searchGnaf } from './gnaf.js';
 import { openStore, cleanEntry } from './store.js';
 import { Guide, fmtDist, metres, bearingWords } from './guide.js';
 
@@ -137,13 +138,24 @@ function addressBox(host, { placeholder, onPick, onClear }) {
     if (ctl) ctl.abort();
     ctl = new AbortController();
     const local = suburbCentres().filter(s => s.title.toLowerCase().includes(q.toLowerCase()));
+    const signal = ctl.signal;
+    // 1. Australia's official address list (G-NAF): exact house positions across the Toowoomba region
+    let official = [];
+    try { official = await searchGnaf(q); } catch (e) { official = []; }
+    if (signal.aborted || input.value.trim() !== q) return;
+    if (official.some(p => p.exact)) return show(official);
+    if (official.length) show(official); // show these straight away; the map search may add more below
+    // 2. The map search, for parks, landmarks and anything the address list doesn't have
     try {
-      let found = await svc.searchAddress(q, ctl.signal);
-      // The map knows few house numbers, so if "12 Bob St" finds nothing, look for "Bob St"
-      if (!found.length && leadingNumber(q)) found = await svc.searchAddress(withoutNumber(q), ctl.signal);
-      if (input.value.trim() === q) show(found.length ? found : local);
+      let found = await svc.searchAddress(q, signal);
+      if (!found.length && leadingNumber(q)) found = await svc.searchAddress(withoutNumber(q), signal);
+      if (input.value.trim() !== q) return;
+      const seen = new Set(official.map(p => (p.title + '|' + p.suburb).toLowerCase()));
+      const extra = found.filter(p => !seen.has((p.title + '|' + p.suburb).toLowerCase()));
+      const all = [...official, ...extra].slice(0, 6);
+      show(all.length ? all : local);
     } catch (e) {
-      if (e.name !== 'AbortError' && input.value.trim() === q) show(local, true);
+      if (e.name !== 'AbortError' && input.value.trim() === q) show(official.length ? official : local, !official.length);
     }
   };
   input.addEventListener('input', () => {

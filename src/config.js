@@ -15,7 +15,7 @@ export const CONFIG = {
   cartoKey: '', // only used if the tiles below are switched back to CARTO
   tiles: {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · Addresses: G-NAF &copy; Geoscape Australia (CC BY 4.0)',
     subdomains: 'abc',
     maxZoom: 19
   },
