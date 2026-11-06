@@ -899,7 +899,16 @@ async function renderAdmin() {
       <div class="card"><p style="margin:0">Only the group's admins can approve displays.</p>
         ${me ? `<p class="note">You're signed in as ${esc(me.email)}, but you're not an admin yet. Your user ID is <b>${esc(me.uid)}</b>.</p>` : ''}
         <button class="btn primary wide" type="button" id="signIn">Sign in with Google</button></div>`;
-    $('#signIn', v).onclick = async () => { await S.signIn(); refreshAdminTab(); renderAdmin(); };
+    $('#signIn', v).onclick = async () => {
+      const btn = $('#signIn', v); btn.disabled = true; btn.textContent = 'Signing in…';
+      try { await S.signIn(); refreshAdminTab(); renderAdmin(); }
+      catch (e) {
+        console.error(e); btn.disabled = false; btn.textContent = 'Sign in with Google';
+        const m = document.createElement('p'); m.className = 'status err';
+        m.textContent = `Sign-in didn't work (${e.code || e.message || 'unknown error'}). Try again, or tell Claude this message.`;
+        btn.after(m);
+      }
+    };
     return;
   }
   refreshAdminTab();
@@ -1006,6 +1015,11 @@ async function start() {
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
   show(location.hash.slice(1) || 'plan');
   refreshAdminTab();
+  let taps = 0, tapTimer = 0;
+  $('.brand .mark').addEventListener('click', () => {
+    taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 1500);
+    if (taps >= 5) { taps = 0; if (location.hash === '#admin') show('admin'); else location.hash = 'admin'; }
+  });
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     try { await navigator.serviceWorker.register('sw.js'); } catch (e) { /* preview pages can't use one */ }
   }
