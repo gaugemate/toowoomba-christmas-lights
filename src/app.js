@@ -400,7 +400,7 @@ function coverageLine(r) {
   const P = state.plan, pool = P.pool || [];
   if (!pool.length) return '';
   const where = P.suburbs.size ? `in ${esc(suburbsLabel(P.suburbs))}` : 'around Toowoomba';
-  if (r.count >= pool.length) return `<p class="cover all">All ${pool.length} displays ${where}.</p>`;
+  if (r.count >= pool.length) return `<p class="cover all">${pool.length === 1 ? 'The 1 display' : `All ${pool.length} displays`} ${where}.</p>`;
   const missing = pool.length - r.count;
   let extra = '';
   if (P.suburbs.size) {
