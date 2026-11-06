@@ -707,10 +707,9 @@ function renderMapTab() {
   const subs = suburbsWithCounts();
   const filter = state.mapFilter || '';
   const shown = state.displays.filter(d => !filter || d.suburb === filter);
-  const tonight = state.displays.filter(litTonight).length;
   v.innerHTML = `
     <h1>All the lights</h1>
-    <p class="note">${state.displays.length} displays${preSeason() ? ' · the season starts soon' : ` · ${tonight} on tonight`}. Bigger dots are bigger displays.</p>
+    <p class="note">${state.displays.length} ${state.displays.length === 1 ? 'Display' : 'Displays'}. Bigger dots are bigger displays.</p>
     <div class="map tall" id="allMap"></div>
     <div id="sheet"></div>
     <select id="subFilter" aria-label="Show suburb">
