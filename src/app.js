@@ -15,8 +15,17 @@ const ICON = {
   pin: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/></svg>',
   locate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>',
   nav: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 3 3 10.5l7.2 2.3L12.5 20z"/></svg>',
-  star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>'
+  star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>',
+  // Line icons for the card headings and buttons (same style as the bottom menu)
+  pinLine: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
+  map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13M15 6.5v13"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
+  route: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/></svg>',
+  arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
 };
+// A white card with a round icon and a heading (the spec's content card)
+const cardHead = (icon, title, extra = '') => `<div class="card-heading"><span class="card-icon">${icon}</span><h2>${title}</h2>${extra}</div>`;
 
 const FEATURES = {
   music: 'Music', animated: 'Moving lights', inflatables: 'Inflatables',
@@ -121,7 +130,7 @@ const leadingNumber = q => (String(q || '').match(/^\s*(\d+[a-z]?(?:\s*\/\s*\d+[
 const withoutNumber = q => String(q || '').replace(/^\s*\d+[a-z]?(?:\s*\/\s*\d+[a-z]?)?\s+/i, '');
 
 function addressBox(host, { placeholder, onPick, onClear }) {
-  host.innerHTML = `<div class="search"><input type="search" enterkeyhint="search" autocomplete="off" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}">
+  host.innerHTML = `<div class="search">${ICON.search}<input type="search" enterkeyhint="search" autocomplete="off" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}">
     <button class="clear" type="button" aria-label="Clear" hidden>×</button></div><ul class="results" role="listbox"></ul>`;
   const input = $('input', host), list = $('.results', host), clear = $('.clear', host);
   let timer = 0, ctl = null, results = [];
@@ -207,14 +216,14 @@ function renderPlan() {
 
   const subs = suburbsWithCounts();
   v.innerHTML = `
-    <h1>Plan a lights drive</h1>
+    <div class="page-heading"><h1>Plan a lights drive</h1><p>Find the best Christmas light displays around Toowoomba.</p></div>
     <div class="card">
-      <h2>Where are you starting?</h2>
+      ${cardHead(ICON.pinLine, 'Where are you starting?')}
       <div id="startBox"></div>
-      <button class="btn wide" id="useHere" type="button">${ICON.locate}Use where I am now</button>
+      <button class="btn primary wide" id="useHere" type="button">${ICON.locate}Use where I am now</button>
     </div>
     <div class="card">
-      <div class="card-head"><h2>Which suburbs?</h2></div>
+      ${cardHead(ICON.map, 'Which suburbs?')}
       <div class="chips more" id="subChips">
         <button class="chip" type="button" data-sub="" aria-pressed="${P.suburbs.size === 0}">Anywhere near me</button>
         ${subs.map(([s, n], i) => `<button class="chip${i >= 8 ? ' extra' : ''}" type="button" data-sub="${esc(s)}" aria-pressed="${P.suburbs.has(s)}">${esc(s)} <small>${n}</small></button>`).join('')}
@@ -222,7 +231,7 @@ function renderPlan() {
       ${subs.length > 8 ? '<button class="linkbtn" type="button" id="moreSubs">Show all suburbs</button>' : ''}
     </div>
     <div class="card">
-      <h2>How long have you got?</h2>
+      ${cardHead(ICON.clock, 'How long have you got?')}
       <div class="timepick">
         <button class="step" type="button" id="less" aria-label="Less time">−</button>
         <div class="bigtime" id="bigTime" aria-live="polite"></div>
@@ -235,7 +244,7 @@ function renderPlan() {
         <button type="button" data-back="0" aria-pressed="${!P.back}">Finish anywhere</button>
       </div>
     </div>
-    <button class="btn go wide" id="findBtn" type="button">Find my drive</button>
+    <button class="btn go wide" id="findBtn" type="button">${ICON.route}Plan my drive${ICON.arrow}</button>
     <p class="status" id="planStatus" role="status"></p>
     ${preSeason() ? '<p class="note">The lights season hasn\'t started yet, so drives use every display on the list.</p>' : ''}`;
 
