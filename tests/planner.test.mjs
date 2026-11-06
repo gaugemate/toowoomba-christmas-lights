@@ -1,7 +1,7 @@
 // Run with: npm test   (needs Node 20 or newer; nothing to install)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planRoutes, estimateMatrix, shortlist, viewMinutes, haversineKm, tourMinutes, MUSIC_VIEW_MIN } from '../src/planner.js';
+import { planRoutes, estimateMatrix, shortlist, viewMinutes, haversineKm, tourMinutes, MUSIC_VIEW_MIN, radioStation } from '../src/planner.js';
 import { SAMPLE_DISPLAYS } from '../src/sample-displays.js';
 
 const START = { lat: -27.5606, lng: 151.9539 }; // Toowoomba city centre
@@ -118,4 +118,14 @@ test('time to see every display in a suburb', () => {
   const matrix = estimateMatrix([START, ...range]);
   const most = planRoutes({ displays: range, matrix, budgetMin: Math.ceil(fromCity.minutes) + 1, returnToStart: true })[0];
   assert.equal(most.count, range.length);
+});
+
+test('reads the radio station from the notes', () => {
+  assert.equal(radioStation('Tune to 87.6 FM for the music'), '87.6 FM');
+  assert.equal(radioStation('tune to 88fm'), '88 FM');
+  assert.equal(radioStation('Radio 99.1 - Santa Saturdays'), '99.1 FM');
+  assert.equal(radioStation('104.5 MHz'), '104.5 FM');
+  assert.equal(radioStation('1026 AM'), '1026 AM');
+  assert.equal(radioStation('Santa visits at 7.30'), '');
+  assert.equal(radioStation(''), '');
 });

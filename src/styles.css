@@ -299,6 +299,13 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .overlay .arrive{width:100%;max-width:520px;border:5px solid var(--gold);gap:14px;padding:20px 18px;animation:rise .25s ease-out}
 .overlay .arrive .where{font-size:2rem;margin:0;line-height:1.15}
 .overlay .arrive .sz{display:flex;gap:8px;flex-wrap:wrap}
+/* Arrival card: the radio station, big enough to read at a glance */
+.radiobanner{display:flex;align-items:center;gap:14px;background:var(--gold-primary);color:var(--green-dark);border-radius:var(--radius-medium);padding:12px 16px}
+.radiobanner svg{width:40px;height:40px;flex:none}
+.radiobanner div{display:flex;flex-direction:column;line-height:1.1}
+.radiobanner span{font-size:1rem;font-weight:700}
+.radiobanner b{font-size:2.1rem;font-weight:800;letter-spacing:-.02em}
+.radiobanner b + span{margin-top:4px}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes rise{from{transform:translateY(40px)}to{transform:none}}
 

@@ -295,3 +295,12 @@ export function shortlist(start, displays, budgetMin, max = 70) {
     .sort((a, b) => a.km / lightScore(a.d) - b.km / lightScore(b.d));
   return scored.slice(0, max).map(x => x.d);
 }
+
+// The radio station from a display's notes: "Tune to 87.6 FM" -> "87.6 FM"; "88 fm" -> "88 FM"; none -> ''
+export function radioStation(notes) {
+  const t = String(notes || '');
+  let m = t.match(/\b(\d{2,4}(?:\.\d{1,2})?)\s*(FM|AM|MHz)\b/i);
+  if (m) return `${m[1]} ${m[2].toUpperCase() === 'MHZ' ? 'FM' : m[2].toUpperCase()}`;
+  m = t.match(/\b(8[89]|9\d|10[0-7])\.\d\b/); // a bare FM frequency like 87.6–107.9
+  return m ? `${m[0]} FM` : '';
+}

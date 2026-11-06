@@ -1,6 +1,6 @@
 // Toowoomba Christmas Lights app: Plan a drive, All lights, Add my lights, and Approvals (#admin, not on the menu).
 import { CONFIG } from './config.js';
-import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN } from './planner.js';
+import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN, radioStation } from './planner.js';
 import * as svc from './services.js';
 import { searchGnaf } from './gnaf.js';
 import { openStore, cleanEntry } from './store.js';
@@ -634,12 +634,14 @@ function onArrive() {
       <button class="btn go wide" type="button" id="arrNext">Finish</button>`, () => { P.driveAt++; endDrive(); });
   }
   const d = t.d, k = P.driveAt, last = k === r.stops.length - 1;
-  speak(`You've arrived at stop ${k + 1}, ${d.address}. Enjoy the lights!`);
+  const radio = (d.features || []).includes('radio'), station = radio ? radioStation(d.notes) : '';
+  speak(`You've arrived at stop ${k + 1}, ${d.address}.${station ? ` Tune your radio to ${station.replace(/\bFM\b/, 'F M').replace(/\bAM\b/, 'A M')}.` : radio ? ' Tune your car radio.' : ''} Enjoy the lights!`);
   const nextLabel = last ? (P.back ? 'Head back to the start ›' : 'Finish') : `Next stop ›`;
   showArrival(`
     <div class="label">You're here · Stop ${k + 1} of ${r.stops.length}</div>
     <h1 class="where">${esc(d.address)}</h1>
     <div class="muted" style="font-weight:700;font-size:1.1rem">${esc(d.suburb)}</div>
+    ${radio ? `<div class="radiobanner" role="note">${RADIO_ICON}<div>${station ? `<span>Tune to</span><b>${esc(station)}</b>` : `<b>Tune your car radio</b><span>The station's in the notes below</span>`}</div></div>` : ''}
     <div class="sz">${dispTags(d)}</div>
     ${d.notes ? `<p style="margin:0;font-size:1.1rem">${esc(d.notes)}</p>` : ''}
     <button class="btn go wide" type="button" id="arrNext">${nextLabel}</button>
