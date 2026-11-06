@@ -31,7 +31,7 @@ service cloud.firestore {
         && d.lng is number && d.lng > 150.5 && d.lng < 153
         && d.size is int && d.size >= 1 && d.size <= 4
         && d.viewing in ['drive', 'walk']
-        && (!('features' in d) || (d.features is list && d.features.size() <= 6))
+        && (!('features' in d) || (d.features is list && d.features.size() <= 10))
         && (!('from' in d) || str(d.from, 10))
         && (!('until' in d) || str(d.until, 10))
         && (!('hours' in d) || str(d.hours, 30))

@@ -100,6 +100,8 @@ test('displays with lights to music get 15 minutes', () => {
   assert.equal(MUSIC_VIEW_MIN, 15);
   assert.equal(viewMinutes({ size: 1, features: ['music'] }), 15);
   assert.equal(viewMinutes({ size: 4, features: ['music'], viewing: 'walk' }), 15);
+  assert.equal(viewMinutes({ size: 1, features: ['synced'] }), 15, 'lights to music');
+  assert.ok(viewMinutes({ size: 1, features: ['radio'] }) < 15, 'radio alone is not a music stop');
   assert.ok(viewMinutes({ size: 1, features: [] }) < 15);
 });
 

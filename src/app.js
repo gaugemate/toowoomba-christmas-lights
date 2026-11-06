@@ -28,9 +28,11 @@ const ICON = {
 const cardHead = (icon, title, extra = '') => `<div class="card-heading"><span class="card-icon">${icon}</span><h2>${title}</h2>${extra}</div>`;
 
 const FEATURES = {
-  music: 'Music', animated: 'Moving lights', inflatables: 'Inflatables',
-  walkthrough: 'Walk-through', santa: 'Santa visits', charity: 'Charity collection'
+  music: 'Music', synced: 'Lights to music', animated: 'Moving lights', inflatables: 'Inflatables',
+  walkthrough: 'Walk-through', santa: 'Santa visits', charity: 'Charity collection', radio: 'Tune car radio'
 };
+const WHATS_IN_IT = Object.keys(FEATURES).filter(k => k !== 'radio');
+const RADIO_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="9" width="18" height="11" rx="2"/><path d="M7 9 17 4"/><circle cx="8" cy="14.5" r="2"/><path d="M14 13h4M14 16h4"/></svg>';
 const HOURS_FROM = ['Dusk', '6pm', '6:30pm', '7pm', '7:30pm', '8pm', '8:30pm', '9pm'];
 const HOURS_TO = ['9pm', '9:30pm', '10pm', '10:30pm', '11pm', 'Midnight', 'Late'];
 const MAX_MIN = 300; // longest drive you can ask for (5 hours)
@@ -296,7 +298,7 @@ function renderPlan() {
     box.hidden = false;
     box.innerHTML = `To see ${what} in ${esc(where)} takes about <b>${fmtDurText(need)}</b>` +
       `${P.start ? (P.back ? ', there and back' : ' from your start') : ''}.` +
-      (music ? ` That allows ${MUSIC_VIEW_MIN} minutes at ${music === 1 ? 'the display' : `each of the ${music} displays`} with lights to music.` : '') +
+      (music ? ` That allows ${MUSIC_VIEW_MIN} minutes at ${music === 1 ? 'the display' : `each of the ${music} displays`} with music or lights to music.` : '') +
       (need === P.minutes ? '' : need <= MAX_MIN ? ` <button class="linkbtn" type="button" id="useAll">Set ${fmtDurText(need)}</button>`
         : ` That's more than ${MAX_MIN / 60} hours, so your drive will pick the best ones.`);
     const use = $('#useAll', box);
@@ -842,12 +844,13 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
         </div>
         <div class="card">
           <h2>What's in it? <span class="muted" style="font-weight:600;font-size:1rem">(tick any)</span></h2>
-          <div class="chips" id="featChips">${Object.entries(FEATURES).map(([k, t]) => `<button type="button" class="chip" data-f="${k}" aria-pressed="${F.features.has(k)}">${t}</button>`).join('')}</div>
+          <div class="chips" id="featChips">${WHATS_IN_IT.map(k => `<button type="button" class="chip" data-f="${k}" aria-pressed="${F.features.has(k)}">${FEATURES[k]}</button>`).join('')}</div>
           <h2>How do people see it?</h2>
           <div class="seg" role="group" aria-label="How to see it">
             <button type="button" data-view="drive" aria-pressed="${F.viewing === 'drive'}">Drive past</button>
             <button type="button" data-view="walk" aria-pressed="${F.viewing === 'walk'}">Park and walk</button>
           </div>
+          <button type="button" class="chip radiochip" id="radioChip" aria-pressed="${F.features.has('radio')}">${RADIO_ICON}Tune your car radio</button>
         </div>
         <div class="card">
           <h2>When is it on?</h2>
@@ -923,6 +926,19 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
   $$('[data-size]', v).forEach(b => b.onclick = () => { F.size = +b.dataset.size; $$('[data-size]', v).forEach(x => x.setAttribute('aria-checked', x === b)); });
   $('#featChips', v).onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; const f = b.dataset.f; F.features.has(f) ? F.features.delete(f) : F.features.add(f); b.setAttribute('aria-pressed', F.features.has(f)); };
   $$('[data-view]', v).forEach(b => b.onclick = () => { F.viewing = b.dataset.view; $$('[data-view]', v).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+  const notes = $('#notes', v), notesLabel = $('label[for="notes"]', v), plainLabel = notesLabel.innerHTML, plainHint = notes.placeholder;
+  const showRadio = () => {
+    const on = F.features.has('radio');
+    $('#radioChip', v).setAttribute('aria-pressed', on);
+    notesLabel.innerHTML = on ? 'Which radio station? <span class="muted" style="font-weight:600">(and anything else people should know)</span>' : plainLabel;
+    notes.placeholder = on ? 'e.g. Tune to 87.6 FM. Santa visits Saturdays.' : plainHint;
+  };
+  $('#radioChip', v).onclick = () => {
+    F.features.has('radio') ? F.features.delete('radio') : F.features.add('radio');
+    showRadio();
+    if (F.features.has('radio') && !notes.value) notes.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  showRadio();
 
   $('#addForm', v).onsubmit = async e => {
     e.preventDefault();

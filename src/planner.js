@@ -11,9 +11,9 @@ export const SIZES = {
   4: { label: 'Huge', hint: 'Worth the trip on its own', score: 5, view: 6 }
 };
 
-// Lights set to music play a song or two on a loop, so people stop for the whole show
+// Displays with music, or lights synchronised to music, play a song or two on a loop, so people stop for the whole show
 export const MUSIC_VIEW_MIN = 15;
-export const hasMusic = d => (d.features || []).includes('music');
+export const hasMusic = d => (d.features || []).some(f => f === 'music' || f === 'synced');
 
 // Minutes spent looking at a display (slowing down, pulling over, or parking and walking)
 export function viewMinutes(d) {

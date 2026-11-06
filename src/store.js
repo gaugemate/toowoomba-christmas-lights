@@ -18,7 +18,7 @@ export function cleanEntry(d) {
     address: s(d.address, 120), suburb: s(d.suburb, 60),
     lat: Math.round(Number(d.lat) * 1e5) / 1e5, lng: Math.round(Number(d.lng) * 1e5) / 1e5,
     size: Math.min(4, Math.max(1, Math.round(Number(d.size) || 2))),
-    features: (d.features || []).slice(0, 6).map(f => s(f, 20)),
+    features: (d.features || []).slice(0, 10).map(f => s(f, 20)),
     viewing: d.viewing === 'walk' ? 'walk' : 'drive',
     from: s(d.from, 10), until: s(d.until, 10), hours: s(d.hours, 30), notes: s(d.notes, 200)
   };
