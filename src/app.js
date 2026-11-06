@@ -42,6 +42,7 @@ const state = {
   tab: 'plan',
   plan: { start: null, suburbs: new Set(), minutes: 120, back: true, step: 'form', routes: null, chosen: 0, lines: [], driveAt: 0 },
   add: { done: false, editing: null },
+  adminOpen: new Set(), // displays opened on the Admin page's list (kept open when the list refreshes)
   maps: {}
 };
 
@@ -901,6 +902,13 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
         F.place = { ...p };
         drawAddr();
         if (p.typedNumber) toast('Now drag the dot onto the house');
+        // The keyboard closes and the small map appears, which can leave the page halfway down:
+        // bring the address card back to the top once things settle
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        setTimeout(() => {
+          const sc = $('#scroller'), card = box.closest('.card');
+          if (card) sc.scrollTo({ top: Math.max(0, sc.scrollTop + card.getBoundingClientRect().top - sc.getBoundingClientRect().top - 8), behavior: 'smooth' });
+        }, 350);
       } });
     }
   };
@@ -1083,8 +1091,14 @@ async function renderAdmin() {
       </div>`).join('') : '<p class="note">Nothing waiting. New entries from the Add my lights page show up here.</p>'}
     <h2 class="on-page" style="color:#fff">On the map (${live.length})</h2>
     <p class="note on-page">Newest first. <b>Edit</b> changes the details; <b>Undo</b> moves a display back to “Waiting for a check”; <b>Remove</b> deletes it.</p>
-    <ul class="list" id="liveList">${live.map(d => `<li class="adminrow"><span><b>${esc(d.address)}</b><small>${esc(d.suburb)} · ${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${joined(d) ? ' · ' + joined(d) : ''}</small></span>
-      <span class="adminbtns">${S.update && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-edit="${esc(d.id)}">Edit</button>` : ''}${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" type="button" data-remove="${esc(d.id)}">Remove</button></span></li>`).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
+    <ul class="list" id="liveList">${live.map(d => { const open = state.adminOpen.has(d.id); return `<li class="adminrow${open ? ' open' : ''}" data-row="${esc(d.id)}">
+      <button class="rowhead" type="button" data-toggle="${esc(d.id)}" aria-expanded="${open}" aria-controls="opts-${esc(d.id)}">
+        <span><b>${esc(d.address)}</b><small>${esc(d.suburb)}${joined(d) ? ' · ' + joined(d) : ''}</small></span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="rowopts" id="opts-${esc(d.id)}"${open ? '' : ' hidden'}>
+      <small class="rowmeta">${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${d.hours ? ' · ' + esc(d.hours) : ''}</small>
+      <span class="adminbtns">${S.update && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-edit="${esc(d.id)}">Edit</button>` : ''}${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" type="button" data-remove="${esc(d.id)}">Remove</button></span></div></li>`; }).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
     ${S.signOut ? '<button class="linkbtn on-page" type="button" id="signOut" style="color:#fff">Sign out of admin on this phone</button>' : ''}
     ${S.diagnose ? '<button class="btn wide" type="button" id="diagnose">Check the database</button><div id="diagOut"></div>' : ''}`;
   $('#copyLink', v).onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch (e) { $('#addLink', v).select(); toast('Select the link and copy it'); } };
@@ -1116,6 +1130,13 @@ async function renderAdmin() {
   });
   let armed = null;
   $('#liveList', v).onclick = async e => {
+    const tg = e.target.closest('[data-toggle]');
+    if (tg) {
+      const id = tg.dataset.toggle, row = tg.closest('.adminrow'), open = !state.adminOpen.has(id);
+      open ? state.adminOpen.add(id) : state.adminOpen.delete(id);
+      row.classList.toggle('open', open); tg.setAttribute('aria-expanded', open); $('.rowopts', row).hidden = !open;
+      return;
+    }
     const ed = e.target.closest('[data-edit]');
     if (ed) return adminEdit(live.find(x => x.id === ed.dataset.edit));
     const u = e.target.closest('[data-undo]');

@@ -170,9 +170,16 @@ input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-sea
 .overlay .popup h2{font-size:1.4rem;line-height:1.2}
 .popbtns{display:flex;flex-direction:column;gap:10px}
 .adminbtns{display:flex;gap:8px;flex:none}
-.adminrow{display:flex;flex-direction:column;gap:10px;padding:12px 14px}
-.adminrow > span:first-child{display:flex;flex-direction:column;gap:2px}
-.adminrow small{color:var(--muted);font-weight:500}
+.adminrow{display:flex;flex-direction:column;padding:0}
+.rowhead{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:62px;padding:10px 14px;border:0;background:none;color:var(--ink);text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.rowhead > span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.rowhead b{font-weight:700}
+.rowhead small{color:var(--muted);font-weight:500;font-size:.9rem}
+.rowhead .chev{width:26px;height:26px;flex:none;color:var(--green-primary);transition:transform .2s ease}
+.adminrow.open .rowhead .chev{transform:rotate(180deg)}
+.adminrow.open{background:#f6f9f6}
+.rowopts{display:flex;flex-direction:column;gap:10px;padding:0 14px 14px}
+.rowmeta{color:var(--muted);font-weight:500}
 .adminrow .adminbtns .btn{flex:1;min-height:44px;padding:6px 10px}
 .mine h1{font-size:1.45rem;line-height:1.2}
 .myaddr{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
