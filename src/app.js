@@ -847,8 +847,7 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
         <div class="card">
           <div class="field"><label for="notes">Anything people should know? <span class="muted" style="font-weight:600">(optional)</span></label>
             <textarea id="notes" maxlength="200" placeholder="e.g. tune to 87.6 FM for the music, Santa visits Saturdays">${esc(d.notes || '')}</textarea></div>
-          ${mode === 'new' ? `<label class="check"><input type="checkbox" id="consent"><span>This is my home (or I have the owner's OK), and I'm happy for the address to show on the public map.</span></label>
-          <input class="hp" type="text" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">` : ''}
+          ${mode === 'new' ? `<label class="check"><input type="checkbox" id="consent"><span>This is my home (or I have the owner's OK), and I'm happy for the address to show on the public map.</span></label>` : ''}
         </div>
         <button class="btn go wide" type="submit" id="addBtn">${mode === 'new' ? 'Add my lights' : 'Save changes'}</button>
         ${mode !== 'new' ? '<button class="btn wide" type="button" id="formCancel">Cancel</button>' : ''}
@@ -906,7 +905,6 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
     e.preventDefault();
     const status = $('#addStatus', v);
     const err = (msg, el) => { status.className = 'status err'; status.textContent = msg; if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
-    if (mode === 'new' && $('#website', v).value) { onSaved && onSaved({}); return; } // spam bot filled the hidden box
     if (!F.place) return err('Type the address and pick it from the list.', box);
     if (!F.size) return err('Choose how big the display is.', $('.picker', v));
     if (mode === 'new' && !$('#consent', v).checked) {
