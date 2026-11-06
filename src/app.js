@@ -348,6 +348,27 @@ function drawLines() {
   L.marker([P.start.lat, P.start.lng], { icon: pinIcon('start', 34, 'Start'), zIndexOffset: 1000 }).addTo(g);
 }
 
+// Displays within ~10 m of each other (e.g. two houses both left at the middle of their street)
+// would hide each other; give each its own spot in a small ring around the shared point
+function spreadPositions(list) {
+  const groups = new Map(), out = new Map();
+  for (const d of list) {
+    const k = `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(d);
+  }
+  for (const g of groups.values()) {
+    if (g.length === 1) { out.set(g[0].id, [g[0].lat, g[0].lng]); continue; }
+    const r = 0.00009 + 0.00002 * g.length; // about 10–20 m
+    g.forEach((d, i) => {
+      const a = (2 * Math.PI * i) / g.length - Math.PI / 2;
+      out.set(d.id, [d.lat + r * Math.sin(a), d.lng + (r * Math.cos(a)) / Math.cos((d.lat * Math.PI) / 180)]);
+    });
+  }
+  return out;
+}
+const nearSameSpot = (a, b) => metres([a.lat, a.lng], [b.lat, b.lng]) < 12;
+
 function fitTo(map, pts) {
   if (!pts.length) return;
   map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])).pad(0.12), { animate: false });
@@ -719,8 +740,9 @@ function renderMapTab() {
     <ul class="list" id="dispList">${listHTML(shown)}</ul>`;
   const map = state.maps.all = makeMap($('#allMap', v));
   const markers = new Map();
+  const spots = spreadPositions(shown);
   for (const d of shown) {
-    const m = L.marker([d.lat, d.lng], { icon: lightIcon(d), keyboard: false }).addTo(map);
+    const m = L.marker(spots.get(d.id) || [d.lat, d.lng], { icon: lightIcon(d), keyboard: false }).addTo(map);
     m.on('click', () => showSheet(d));
     markers.set(d.id, m);
   }
@@ -780,7 +802,7 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
           <div id="addrBox"></div>
           <div id="pinWrap" hidden>
             <div class="map small" id="pinMap"></div>
-            <p class="note" style="margin-top:8px">Is the dot on the house? If not, drag it there.</p>
+            <p class="note" id="pinNote" style="margin-top:8px">Is the dot on the house? If not, drag it there.</p>
           </div>
           <div class="field" id="subField" hidden><label for="suburb">Suburb</label><input type="text" id="suburb" maxlength="60" autocomplete="address-level2"></div>
         </div>
@@ -831,10 +853,18 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
       $('[data-act=change]', box).onclick = () => { F.place = null; $('#pinWrap', v).hidden = true; $('#subField', v).hidden = true; drawAddr(); };
       $('#pinWrap', v).hidden = false; $('#subField', v).hidden = false;
       $('#suburb', v).value = F.place.suburb || '';
+      const note = $('#pinNote', v);
+      if (F.place.typedNumber) {
+        note.className = 'pinwarn';
+        note.innerHTML = '<b>The map only knows where the street is, not your house.</b> Drag the red dot onto your house, so people stop in the right spot.';
+      } else { note.className = 'note'; note.textContent = 'Is the dot on the house? If not, drag it there.'; }
       if (!pinMap) {
         pinMap = makeMap($('#pinMap', v), { center: [F.place.lat, F.place.lng], zoom: 18 });
         pin = L.marker([F.place.lat, F.place.lng], { draggable: true, icon: pinIcon('home', 30) }).addTo(pinMap);
-        pin.on('dragend', () => { const ll = pin.getLatLng(); F.place.lat = ll.lat; F.place.lng = ll.lng; });
+        pin.on('dragend', () => {
+          const ll = pin.getLatLng(); F.place.lat = ll.lat; F.place.lng = ll.lng;
+          if (F.place.typedNumber) { F.place.typedNumber = false; note.className = 'note'; note.textContent = 'Thanks! Drag it again if it needs a nudge.'; }
+        });
       } else { pinMap.setView([F.place.lat, F.place.lng], 18); pin.setLatLng([F.place.lat, F.place.lng]); setTimeout(() => pinMap.invalidateSize(), 50); }
     } else {
       addressBox(box, { placeholder: 'House number and street, e.g. 12 Ruthven St', onPick: p => {
@@ -1021,6 +1051,8 @@ async function renderAdmin() {
       <div class="card pending" data-id="${esc(d.id)}">
         <div><b style="font-size:1.2rem">${esc(d.address)}</b><div class="muted" style="font-weight:600">${esc(d.suburb)}${joined(d) ? ' · ' + joined(d) : ''}</div></div>
         <p class="meta">${stars(d.size)} ${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'} · ${esc(d.hours)}<br>${esc(fmtDate(d.from))} to ${esc(fmtDate(d.until))}${(d.features || []).length ? '<br>' + d.features.map(f => esc(FEATURES[f] || f)).join(', ') : ''}${d.notes ? '<br>“' + esc(d.notes) + '”' : ''}</p>
+        ${(() => { const twin = [...state.displays, ...pending].find(o => o.id !== d.id && nearSameSpot(o, d));
+          return twin ? `<p class="pinwarn"><b>Same map spot as ${esc(twin.address)}.</b> The dot was probably left at the middle of the street. Tap Edit and drag it onto the right house before approving.</p>` : ''; })()}
         <a class="linkbtn" href="https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}" target="_blank" rel="noopener">Check the spot on Google Maps</a>
         <button class="btn" type="button" data-act="edit">Edit</button>
         <div class="row2"><button class="btn danger" type="button" data-act="reject">Reject</button><button class="btn go" type="button" data-act="approve" style="min-height:52px;font-size:1.05rem">Approve</button></div>
