@@ -10,13 +10,13 @@ export const CONFIG = {
   // Free map services (no account or key needed). Swap for paid or self-hosted ones later if traffic grows.
   photon: 'https://photon.komoot.io', // address search as you type
   osrm: 'https://router.project-osrm.org', // driving times and the route line
-  // CARTO map pictures need a free key (carto.com/basemaps/apikey, non-commercial: free up to 5 million tiles a month).
-  // Paste it here; without one the maps still work but carry a "key required" notice.
-  cartoKey: '',
+  // Street map pictures: OpenStreetMap's own map, free with no key. Their fair-use policy suits a local app;
+  // if traffic ever gets big, swap this for a paid map service (MapTiler, Stadia Maps, ...).
+  cartoKey: '', // only used if the tiles below are switched back to CARTO
   tiles: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-    subdomains: 'abcd',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    subdomains: 'abc',
     maxZoom: 19
   },
 

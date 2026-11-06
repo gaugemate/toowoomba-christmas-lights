@@ -3,7 +3,7 @@
 // - Map pictures: saved as they're viewed (up to MAX_TILES) so maps you've looked at still show offline.
 // - Address search, road times and the database are never saved here; the app has its own fallbacks for those.
 // Bump VERSION when the list of APP_FILES changes.
-const VERSION = 'v11';
+const VERSION = 'v12';
 const APP_CACHE = `tcl-app-${VERSION}`;
 const TILE_CACHE = 'tcl-tiles';
 const MAX_TILES = 600;
@@ -32,7 +32,7 @@ self.addEventListener('activate', event => {
   })());
 });
 
-const isTile = url => /(^|\.)basemaps\.cartocdn\.com$/.test(url.hostname);
+const isTile = url => /(^|\.)(tile\.openstreetmap\.org|basemaps\.cartocdn\.com)$/.test(url.hostname);
 
 async function appFile(request) {
   const cache = await caches.open(APP_CACHE);
