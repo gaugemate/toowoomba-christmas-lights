@@ -391,10 +391,13 @@ function spreadPositions(list) {
 }
 const nearSameSpot = (a, b) => metres([a.lat, a.lng], [b.lat, b.lng]) < 12;
 
-function fitTo(map, pts) {
+// Fit the map to these points, never zooming in closer than maxZoom (so one dot doesn't fill the screen)
+function fitTo(map, pts, maxZoom = 18) {
   if (!pts.length) return;
-  map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])).pad(0.12), { animate: false });
+  map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])).pad(0.12), { animate: false, maxZoom });
 }
+const TOWN_ZOOM = 12;   // all of Toowoomba on a phone screen
+const SUBURB_ZOOM = 14; // one suburb
 
 // "6 of the 11 displays in Rangeville and Highfields. The other 5 need about another 1 h 30."
 function coverageLine(r) {
@@ -768,7 +771,10 @@ function renderMapTab() {
     m.on('click', () => showSheet(d));
     markers.set(d.id, m);
   }
-  if (shown.length) fitTo(map, shown);
+  // Every suburb: at least a whole-of-Toowoomba view, so new visitors see there's more than one street.
+  // One suburb picked: suburb level. (Tapping a display in the list still zooms right in on it.)
+  if (shown.length) fitTo(map, shown, filter ? SUBURB_ZOOM : TOWN_ZOOM);
+  else map.setView(CONFIG.center, TOWN_ZOOM);
   $('#subFilter', v).onchange = e => { state.mapFilter = e.target.value; renderMapTab(); };
   $('#dispList', v).onclick = e => {
     const b = e.target.closest('[data-id]'); if (!b) return;
