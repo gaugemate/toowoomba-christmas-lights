@@ -873,6 +873,7 @@ function renderAdd() {
     const btn = $('#addBtn', v); btn.disabled = true; status.className = 'status'; status.textContent = 'Sending…';
     const address = A.place.title;
     try {
+      await state.storeReady;
       await state.store.submit({
         address, suburb: $('#suburb', v).value.trim() || A.place.suburb, lat: A.place.lat, lng: A.place.lng,
         size: A.size, features: [...A.features], viewing: A.viewing, from, until,
@@ -891,9 +892,18 @@ function renderAdd() {
 
 /* =================================================================== APPROVALS (#admin) */
 async function renderAdmin() {
-  const v = $('#view-admin'), S = state.store;
-  v.innerHTML = '<h1>Approvals</h1><p class="note">Loading…</p>';
-  if (!(await S.isAdmin())) {
+  const v = $('#view-admin');
+  if (!v.querySelector('.card')) v.innerHTML = '<h1>Approvals</h1><p class="note on-page">Loading…</p>';
+  const S = await state.storeReady;
+  if (S.mode === 'offline') {
+    v.innerHTML = `<h1>Approvals</h1><div class="card"><p style="margin:0">Can't reach the database right now. Check your phone has signal, then close and reopen the app.</p></div>`;
+    return;
+  }
+  // Ask "am I an admin?" and "what's waiting?" at the same time
+  const pendingP = S.listPending().catch(() => null);
+  const admin = await S.isAdmin();
+  if (state.tab !== 'admin') return;
+  if (!admin) {
     const me = S.whoAmI ? await S.whoAmI() : null;
     v.innerHTML = `<h1>Approvals</h1>
       <div class="card"><p style="margin:0">Only the group's admins can approve displays.</p>
@@ -901,7 +911,7 @@ async function renderAdmin() {
         <button class="btn primary wide" type="button" id="signIn">Sign in with Google</button></div>`;
     $('#signIn', v).onclick = async () => {
       const btn = $('#signIn', v); btn.disabled = true; btn.textContent = 'Signing in…';
-      try { await S.signIn(); refreshAdminTab(); renderAdmin(); }
+      try { await S.signIn(); await refreshAdminTab(); renderAdmin(); }
       catch (e) {
         console.error(e); btn.disabled = false; btn.textContent = 'Sign in with Google';
         const m = document.createElement('p'); m.className = 'status err';
@@ -911,8 +921,9 @@ async function renderAdmin() {
     };
     return;
   }
-  refreshAdminTab();
-  const pending = await S.listPending();
+  setAdminTab(true);
+  const pending = (await pendingP) || [];
+  if (state.tab !== 'admin') return;
   const link = location.origin + location.pathname + '#add';
   const joined = d => { const c = d.createdAt, t = c?.toDate ? c.toDate() : typeof c === 'number' ? new Date(c) : c?.seconds ? new Date(c.seconds * 1000) : null;
     return t ? 'Added ' + t.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : ''; };
@@ -959,7 +970,7 @@ async function renderAdmin() {
     await S.remove(b.dataset.remove); await loadDisplays(); renderAdmin(); toast('Removed from the map');
   };
   const so = $('#signOut', v);
-  if (so) so.onclick = async () => { await S.signOut(); refreshAdminTab(); location.hash = 'plan'; toast('Signed out'); };
+  if (so) so.onclick = async () => { await S.signOut(); setAdminTab(false); location.hash = 'plan'; toast('Signed out'); };
 }
 
 /* =================================================================== shell */
@@ -975,7 +986,7 @@ function fitNumbers(root = document) {
 }
 new MutationObserver(() => requestAnimationFrame(() => fitNumbers())).observe(document.querySelector('main'), { childList: true, subtree: true });
 
-function show(tab) {
+function show(tab, { keepScroll = false } = {}) {
   closePopup();
   if (!['plan', 'map', 'add', 'admin'].includes(tab)) tab = 'plan';
   state.tab = tab;
@@ -985,15 +996,15 @@ function show(tab) {
   if (tab === 'map') renderMapTab();
   if (tab === 'add') renderAdd();
   if (tab === 'admin') renderAdmin();
-  scrollTop();
+  if (!keepScroll) scrollTop();
 }
 
 // Show the Admin menu button on phones signed in as an admin
 async function refreshAdminTab() {
+  if (!state.store || state.store.mode === 'offline') return; // keep what we had until we can check
   let yes = false;
-  try { yes = state.store.mode !== 'offline' && await state.store.isAdmin(); } catch (e) { yes = false; }
-  $('#adminTab').hidden = !yes;
-  $('nav.tabs').classList.toggle('four', yes);
+  try { yes = await state.store.isAdmin(); } catch (e) { yes = false; }
+  setAdminTab(yes);
 }
 
 async function loadDisplays() {
@@ -1003,18 +1014,41 @@ async function loadDisplays() {
 
 function sizeApp() { document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); }
 
+// The last list of displays this phone saw (saved by the database code), so the app can open at once
+function cachedDisplays() {
+  if (!CONFIG.firebase) return null;
+  try { return JSON.parse(localStorage.getItem('lm.cache.approved') || 'null'); } catch (e) { return null; }
+}
+const ADMIN_FLAG = 'lm.wasAdmin';
+function setAdminTab(yes) {
+  $('#adminTab').hidden = !yes;
+  $('nav.tabs').classList.toggle('four', yes);
+  try { yes ? localStorage.setItem(ADMIN_FLAG, '1') : localStorage.removeItem(ADMIN_FLAG); } catch (e) { /* private mode */ }
+}
+
 async function start() {
   sizeApp(); window.addEventListener('resize', sizeApp);
   $('#areaChip').innerHTML = `${ICON.pin}${esc(CONFIG.area)}`;
-  state.store = await openStore();
-  await loadDisplays();
+  const cached = cachedDisplays();
+  if (cached) state.displays = cached;
+  try { if (localStorage.getItem(ADMIN_FLAG)) setAdminTab(true); } catch (e) { /* private mode */ }
+  // The database code is big; load it in the background instead of making everyone wait for it
+  state.storeReady = openStore().then(async s => {
+    state.store = s;
+    await loadDisplays();
+    // Bring the screen up to date, unless someone is in the middle of filling something in
+    const P = state.plan;
+    if (state.tab === 'map' || (state.tab === 'plan' && P.step === 'form')) show(state.tab, { keepScroll: true });
+    refreshAdminTab();
+    return s;
+  });
+  if (!cached) await state.storeReady; // first ever visit: nothing saved yet, so wait for the real list
   $$('nav.tabs [data-tab]').forEach(b => b.onclick = () => {
     if (b.dataset.tab === 'plan' && state.tab === 'plan' && state.plan.step !== 'drive') { state.plan.step = 'form'; }
     if (location.hash === '#' + b.dataset.tab) show(b.dataset.tab); else location.hash = b.dataset.tab;
   });
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
   show(location.hash.slice(1) || 'plan');
-  refreshAdminTab();
   let taps = 0, tapTimer = 0;
   $('.brand .mark').addEventListener('click', () => {
     taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 1500);

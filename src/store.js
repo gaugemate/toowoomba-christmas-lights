@@ -63,6 +63,8 @@ async function liveStore(cfg) {
   const col = fs.collection(db, 'displays');
   const rows = snap => snap.docs.map(d => ({ id: d.id, ...d.data() }));
   const authReady = new Promise(r => au.onAuthStateChanged(auth, () => r(), () => r()));
+  let adminCheck = null;
+  au.onAuthStateChanged(auth, () => { adminCheck = null; });
 
   return {
     mode: 'live',
@@ -80,23 +82,28 @@ async function liveStore(cfg) {
     async submit(entry) {
       await fs.addDoc(col, { ...cleanEntry(entry), status: 'pending', createdAt: fs.serverTimestamp() });
     },
-    async isAdmin() {
-      await authReady;
-      const u = auth.currentUser;
-      if (!u) return false;
-      try { return (await fs.getDoc(fs.doc(db, 'admins', u.uid))).exists(); } catch (e) { return false; }
+    isAdmin() {
+      // Remembered for this signed-in person, so the check happens once rather than on every screen
+      adminCheck ??= (async () => {
+        await authReady;
+        const u = auth.currentUser;
+        if (!u) return false;
+        try { return (await fs.getDoc(fs.doc(db, 'admins', u.uid))).exists(); } catch (e) { adminCheck = null; return false; }
+      })();
+      return adminCheck;
     },
     async signIn() {
       const provider = new au.GoogleAuthProvider();
       try { await au.signInWithPopup(auth, provider); }
       catch (e) { await au.signInWithRedirect(auth, provider); }
+      adminCheck = null;
       return this.isAdmin();
     },
     async whoAmI() { await authReady; return auth.currentUser ? { uid: auth.currentUser.uid, email: auth.currentUser.email } : null; },
     async listPending() { return rows(await fs.getDocs(fs.query(col, fs.where('status', '==', 'pending')))); },
     async approve(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'approved', approvedAt: fs.serverTimestamp() }); },
     async unapprove(id) { await fs.updateDoc(fs.doc(db, 'displays', id), { status: 'pending' }); },
-    async signOut() { await au.signOut(auth); },
+    async signOut() { await au.signOut(auth); adminCheck = null; },
     async reject(id) { await fs.deleteDoc(fs.doc(db, 'displays', id)); },
     async remove(id) { await fs.deleteDoc(fs.doc(db, 'displays', id)); }
   };

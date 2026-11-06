@@ -3,9 +3,10 @@
 // - Map pictures: saved as they're viewed (up to MAX_TILES) so maps you've looked at still show offline.
 // - Address search, road times and the database are never saved here; the app has its own fallbacks for those.
 // Bump VERSION when the list of APP_FILES changes.
-const VERSION = 'v12';
+const VERSION = 'v13';
 const APP_CACHE = `tcl-app-${VERSION}`;
 const TILE_CACHE = 'tcl-tiles';
+const LIB_CACHE = 'tcl-libs'; // the database code from Google: each version never changes, so keep it
 const MAX_TILES = 600;
 
 const APP_FILES = [
@@ -49,6 +50,15 @@ async function appFile(request) {
   }
 }
 
+async function library(request) {
+  const cache = await caches.open(LIB_CACHE);
+  const saved = await cache.match(request);
+  if (saved) return saved;
+  const fresh = await fetch(request);
+  if (fresh.ok) await cache.put(request, fresh.clone());
+  return fresh;
+}
+
 async function tile(request) {
   const cache = await caches.open(TILE_CACHE);
   const saved = await cache.match(request);
@@ -68,5 +78,6 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (url.origin === self.location.origin) event.respondWith(appFile(request));
   else if (isTile(url)) event.respondWith(tile(request));
+  else if (url.hostname === 'www.gstatic.com' && /^\/firebasejs\/\d/.test(url.pathname)) event.respondWith(library(request));
   // everything else (address search, road times, Firebase) goes straight to the network
 });
