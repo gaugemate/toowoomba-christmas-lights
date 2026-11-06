@@ -2,7 +2,7 @@
 import { CONFIG } from './config.js';
 import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN, radioStation } from './planner.js';
 import * as svc from './services.js';
-import { searchGnaf } from './gnaf.js';
+import { searchGnaf, nearestAddress } from './gnaf.js';
 import { openStore, cleanEntry } from './store.js';
 import { Guide, fmtDist, metres, bearingWords } from './guide.js';
 
@@ -317,9 +317,19 @@ function useMyLocation(btn, status, done) {
   btn.disabled = true; status.className = 'status'; status.textContent = 'Finding where you are…';
   navigator.geolocation.getCurrentPosition(async pos => {
     const { latitude: lat, longitude: lng } = pos.coords;
-    const named = await svc.nameOfPlace(lat, lng);
+    // Name the spot by the nearest street address from the official list ("84 Hume Street"); the map
+    // service's name (often a nearby business) is only the fallback outside the region or away from houses
+    let near = null;
+    try { near = await nearestAddress(lat, lng); } catch (e) { near = null; }
+    let place;
+    if (near && near.metres <= 60) place = { title: near.title, line2: near.line2, suburb: near.suburb };
+    else if (near && near.metres <= 250) place = { title: `Near ${near.title}`, line2: near.line2, suburb: near.suburb };
+    else {
+      const named = await svc.nameOfPlace(lat, lng);
+      place = { title: named ? named.title : 'Where you are now', line2: named ? named.line2 : 'Your current location', suburb: named?.suburb || '' };
+    }
     btn.disabled = false; status.textContent = '';
-    done({ title: named ? named.title : 'Where you are now', line2: named ? named.line2 : 'Your current location', suburb: named?.suburb || '', lat, lng });
+    done({ ...place, lat, lng }); // the drive still starts from the phone's actual position
   }, () => {
     btn.disabled = false; status.className = 'status err';
     status.textContent = "Couldn't get your location. Check location is allowed for this app, or type an address.";

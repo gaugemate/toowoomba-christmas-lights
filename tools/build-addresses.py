@@ -88,6 +88,26 @@ def main(folder):
     size = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
     print(f'{len(chunks)} files, {size / 1e6:.1f} MB in all, written to data/addresses/')
 
+    # 4. The same addresses grouped by area (about 1 km squares), for "what's the nearest address to me?".
+    #    Units (3/45) are left out so a spot is named by its street address. File near/<row>_<col>.json, where
+    #    row = whole 1/100ths of a degree south of -27, col = whole 1/100ths of a degree east of 151.
+    near_dir = os.path.join(OUT, 'near'); os.makedirs(near_dir, exist_ok=True)
+    for old in os.listdir(near_dir):
+        if old.endswith('.json'): os.remove(os.path.join(near_dir, old))
+    cells = defaultdict(lambda: {'s': [], 'si': {}, 'a': []})
+    for (name, loc, pc), nums in sorted(by_street.items()):
+        for n, (la, ln) in nums.items():
+            if '/' in n: continue
+            c = cells[(la // 1000, ln // 1000)]
+            k = (name, loc, pc)
+            if k not in c['si']: c['si'][k] = len(c['s']); c['s'].append([name, loc, pc])
+            c['a'].append([c['si'][k], n, la, ln])
+    for (r, col), c in cells.items():
+        with open(os.path.join(near_dir, f'{r}_{col}.json'), 'w') as f:
+            json.dump({'base': [BASE_LAT, BASE_LNG], 'cell': [r, col], 's': c['s'], 'a': c['a']}, f, separators=(',', ':'))
+    sizes = [os.path.getsize(os.path.join(near_dir, f)) for f in os.listdir(near_dir)]
+    print(f'{len(sizes)} area files, largest {max(sizes) / 1e3:.0f} KB, {sum(sizes) / 1e6:.1f} MB in all, written to data/addresses/near/')
+
     # A look at the suburbs covered, to check the region is right
     per_loc = defaultdict(int)
     for (name, loc, pc), nums in by_street.items(): per_loc[loc] += len(nums)

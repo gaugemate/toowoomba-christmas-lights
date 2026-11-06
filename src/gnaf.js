@@ -85,3 +85,43 @@ export async function searchGnaf(q, limit = 6) {
   const out = exact.length ? exact : near;
   return out.slice(0, limit);
 }
+
+// ---------- "What's the nearest address to here?" (for "Use where I am now") ----------
+// data/addresses/near/<row>_<col>.json hold the region's street addresses in about 1 km squares.
+const areas = new Map();
+function area(r, c) {
+  const k = `${r}_${c}`;
+  if (!areas.has(k)) {
+    areas.set(k, fetch(`data/addresses/near/${k}.json`).then(res => (res.ok ? res.json() : null)).catch(() => { areas.delete(k); return null; }));
+  }
+  return areas.get(k);
+}
+const metresBetween = (a, b) => {
+  const toR = Math.PI / 180, dLat = (b[0] - a[0]) * toR, dLng = (b[1] - a[1]) * toR;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * toR) * Math.cos(b[0] * toR) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(s));
+};
+
+/** The nearest street address to a spot, or null outside the region: { title, line2, suburb, metres } */
+export async function nearestAddress(lat, lng) {
+  const BASE = [-27.0, 151.0];
+  const la = (BASE[0] - lat) * 1e5, ln = (lng - BASE[1]) * 1e5;
+  const r = Math.floor(la / 1000), c = Math.floor(ln / 1000);
+  let best = null;
+  const look = d => {
+    if (!d) return;
+    for (const [si, n, a, b] of d.a) {
+      const m = metresBetween([lat, lng], [d.base[0] - a / 1e5, d.base[1] + b / 1e5]);
+      if (!best || m < best.metres) { const [name, loc, pc] = d.s[si]; best = { metres: m, title: `${n} ${name}`, suburb: loc, line2: [loc, 'QLD', pc].filter(Boolean).join(' ') }; }
+    }
+  };
+  look(await area(r, c));
+  // Close to the edge of the square? The nearest address may be in the next one, so look there too
+  const edge = Math.min(la - r * 1000, (r + 1) * 1000 - la, ln - c * 1000, (c + 1) * 1000 - ln) * 1.1; // metres, roughly
+  if (!best || best.metres > edge) {
+    const around = [];
+    for (const dr of [-1, 0, 1]) for (const dc of [-1, 0, 1]) if (dr || dc) around.push(area(r + dr, c + dc));
+    (await Promise.all(around)).forEach(look);
+  }
+  return best;
+}
