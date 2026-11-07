@@ -16,6 +16,14 @@ export const FIELDS = ['address', 'suburb', 'lat', 'lng', 'size', 'features', 'v
 export const THUMB_MAX = 12000, PHOTO_MAX = 350000;
 const isJpeg = (v, max) => typeof v === 'string' && v.length <= max && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(v);
 
+// Tonight, as a date: the night runs until 6am, so a display switched off at 9pm stays off until the next evening
+export function nightKey(now = new Date()) {
+  const d = new Date(now.getTime() - 6 * 3600 * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+// Switched off for tonight by the person who added it (bad weather, a problem with the lights)
+export const offTonight = (d, now) => !!d && d.offDate === nightKey(now);
+
 // The season a "Start a new year" begins: from July it's next year's, before July it's this year's
 export const newSeasonYear = (now = new Date()) => (now.getMonth() >= 6 ? now.getFullYear() + 1 : now.getFullYear());
 
@@ -41,6 +49,8 @@ function demoStore() {
   return {
     mode: 'demo',
     async getPhoto(id) { return photos()[id] || null; },
+    async getDisplay(id) { return [...SAMPLE_DISPLAYS, ...extra()].find(d => d.id === id && d.status === 'approved' && !removed().has(id)) || null; },
+    async setOffTonight(id, off) { save(extra().map(d => (d.id === id ? { ...d, offDate: off ? nightKey() : '' } : d))); },
     async setPhoto(id, image) { setPhoto(id, isJpeg(image, PHOTO_MAX) ? image : null); },
     async removePhoto(id) {
       setPhoto(id, null);
@@ -156,6 +166,13 @@ async function liveStore(cfg) {
       }
       return ref.id;
     },
+    // The latest details of one display (null if it's no longer on the map; undefined if we couldn't check)
+    async getDisplay(id) {
+      try { const s = await fs.getDoc(fs.doc(db, 'displays', id)); return s.exists() && s.data().status === 'approved' ? { id, ...s.data() } : null; }
+      catch (e) { return e.code === 'permission-denied' ? null : undefined; }
+    },
+    // The person who added a display (or an admin) switches its lights off for tonight, or back on
+    async setOffTonight(id, off) { await fs.updateDoc(fs.doc(db, 'displays', id), { offDate: off ? nightKey() : '' }); },
     async getPhoto(id) {
       try { const s = await fs.getDoc(fs.doc(db, 'photos', id)); return s.exists() ? s.data().image : null; }
       catch (e) { return null; }
@@ -278,7 +295,7 @@ function offlineStore() {
     mode: 'offline',
     async listApproved() { return LS.get('lm.cache.approved', []); },
     async myDisplays() { return []; },
-    update: fail, getPhoto: async () => null, setPhoto: fail, removePhoto: fail, startNewYear: fail,
+    update: fail, getPhoto: async () => null, getDisplay: async () => undefined, setOffTonight: fail, setPhoto: fail, removePhoto: fail, startNewYear: fail,
     submit: fail, signIn: fail, listPending: fail, approve: fail, reject: fail, remove: fail,
     async isAdmin() { return false; },
     async whoAmI() { return null; }

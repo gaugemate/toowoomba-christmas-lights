@@ -343,3 +343,12 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .newseason{margin-top:22px}
 .progress{height:12px;border-radius:6px;background:#eee;overflow:hidden}
 .progress i{display:block;height:100%;background:#c62828;transition:width .3s}
+
+/* ---------- Opening hours: Leaving time, Before you go, Lights off tonight ---------- */
+.field.leaving{margin-top:4px}
+.byg{border-left:6px solid var(--gold-primary)}
+.byg h2{margin:0}
+.byg ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+.byg .linkbtn{display:inline;padding:0;min-height:0}
+.offbox{display:flex;flex-direction:column;gap:8px}
+.offbox.on{background:var(--red-soft);border-radius:12px;padding:12px}

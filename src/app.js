@@ -1,9 +1,9 @@
 // Toowoomba Christmas Lights app: Plan a drive, All lights, Add my lights, and Approvals (#admin, not on the menu).
 import { CONFIG } from './config.js';
-import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN, radioStation } from './planner.js';
+import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN, radioStation, parseHours, clockText, clockMinutes, nightMinutes, LAST_CALL } from './planner.js';
 import * as svc from './services.js';
 import { searchGnaf, nearestAddress } from './gnaf.js';
-import { openStore, cleanEntry, newSeasonYear, THUMB_MAX, PHOTO_MAX } from './store.js';
+import { openStore, cleanEntry, newSeasonYear, THUMB_MAX, PHOTO_MAX, offTonight } from './store.js';
 import { Guide, fmtDist, metres, bearingWords } from './guide.js';
 
 const L = window.L;
@@ -23,6 +23,7 @@ const ICON = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   route: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/></svg>',
   arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
   tick: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
   camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.6"/></svg>',
   picture: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>'
@@ -36,8 +37,13 @@ const FEATURES = {
 };
 const WHATS_IN_IT = Object.keys(FEATURES).filter(k => k !== 'radio');
 const RADIO_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="9" width="18" height="11" rx="2"/><path d="M7 9 17 4"/><circle cx="8" cy="14.5" r="2"/><path d="M14 13h4M14 16h4"/></svg>';
-const HOURS_FROM = ['Dusk', '6pm', '6:30pm', '7pm', '7:30pm', '8pm', '8:30pm', '9pm'];
-const HOURS_TO = ['9pm', '9:30pm', '10pm', '10:30pm', '11pm', 'Midnight', 'Late'];
+// Lights on / off: real times only, so drives can tell when a display is on ("Dusk" and "Late" were too vague)
+const HOURS_FROM = ['5pm', '5:30pm', '6pm', '6:30pm', '7pm', '7:30pm', '8pm', '8:30pm', '9pm', '9:30pm', '10pm'];
+const HOURS_TO = ['8pm', '8:30pm', '9pm', '9:30pm', '10pm', '10:30pm', '11pm', '11:30pm', 'Midnight', '12:30am', '1am', '1:30am', '2am'];
+// Older entries: "Dusk" counts as 7:30pm and "Late" as midnight
+const tidyHour = h => { const t = String(h || '').trim(); return /^dusk$/i.test(t) ? '7:30pm' : /^(late|midnight)$/i.test(t) ? 'Midnight' : t; };
+// It's dark enough for the lights from about here (Toowoomba, December)
+const DARK = 19 * 60 + 15;
 const MAX_MIN = 300; // longest drive you can ask for (5 hours)
 const ROUTE_COLOURS = ['#c62828', '#0b5a9c', '#7b3fa0'];
 
@@ -55,6 +61,8 @@ const state = {
 const pad = n => String(n).padStart(2, '0');
 const isoDay = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const litTonight = d => { const t = isoDay(new Date()); return (!d.from || d.from <= t) && (!d.until || d.until >= t); };
+// On tonight: within its dates, and not switched off for tonight by the person who added it
+const onTonight = d => litTonight(d) && !offTonight(d);
 const preSeason = () => state.displays.length > 0 && !state.displays.some(litTonight);
 const stars = n => '★'.repeat(n);
 const fmtDate = iso => { if (!iso) return ''; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }); };
@@ -76,7 +84,19 @@ function fmtDur(min) {
   return `<span class="big-n">${h}</span><small>h</small>${m ? ` <span class="big-n">${pad(m)}</span>` : ''}`;
 }
 const fmtDurText = min => { min = Math.round(min); if (min < 60) return `${min} min`; const h = Math.floor(min / 60), m = min % 60; return m ? `${h} h ${pad(m)}` : `${h} h`; };
-const clock = addMin => new Date(Date.now() + addMin * 60000).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }).replace(/\s?([ap])\.?m\.?/i, ' $1m');
+// When the drive leaves: now, or the time picked under "Leaving"
+function leaveDate() {
+  const L = state.plan.leave, now = new Date();
+  if (L == null) return now;
+  const d = new Date(now); d.setHours(Math.floor(L / 60), L % 60, 0, 0);
+  if (d < now) { if (now - d < 6 * 3600000) return now; d.setDate(d.getDate() + 1); } // that time has passed: go now
+  return d;
+}
+const leaveClock = () => { const d = leaveDate(); return d.getHours() * 60 + d.getMinutes(); };
+const leaveWords = () => (state.plan.leave == null || leaveDate() - new Date() < 60000 ? 'now' : `at ${clockText(leaveClock())}`);
+// Planning in the daytime (6am to 4pm): lights aren't on yet, so drives ignore the hours (and we say so)
+const daytime = c => c >= 6 * 60 && c < 16 * 60;
+const clock = addMin => new Date(leaveDate().getTime() + addMin * 60000).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }).replace(/\s?([ap])\.?m\.?/i, ' $1m');
 
 function clearToasts() { $$('.toast').forEach(t => t.remove()); }
 function toast(msg) {
@@ -138,7 +158,7 @@ function pinIcon(cls, size, text = '') {
   return L.divIcon({ className: '', html: `<div class="pin ${cls}" style="width:${size}px;height:${size}px">${text}</div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
 const lightIcon = d => (seen.has(d.id) ? pinIcon('light seen', Math.max(22, 12 + d.size * 3), ICON.tick)
-  : pinIcon(litTonight(d) || preSeason() ? 'light' : 'off', 12 + d.size * 3));
+  : pinIcon(!offTonight(d) && (litTonight(d) || preSeason()) ? 'light' : 'off', 12 + d.size * 3));
 
 /* ---------- address search box ---------- */
 // "12 Ruthven St" → "12"; "3/45 Bob St" → "3/45"; "12a Bob St" → "12a"
@@ -253,6 +273,7 @@ function renderPlan() {
         <div class="bigtime" id="bigTime" aria-live="polite"></div>
         <button class="step" type="button" id="more" aria-label="More time">+</button>
       </div>
+      <div class="field leaving"><label for="leaveAt">Leaving</label><select id="leaveAt">${leaveOptions()}</select></div>
       <p class="endtime" id="endTime"></p>
       <div class="allhint" id="allHint" role="status" hidden></div>
       <div class="seg" role="group" aria-label="Where to finish">
@@ -293,7 +314,7 @@ function renderPlan() {
   const drawTime = () => {
     const h = Math.floor(P.minutes / 60), m = P.minutes % 60;
     $('#bigTime', v).innerHTML = (h ? `<span class="big">${h}</span><span class="u">h</span>` : '') + (m || !h ? `<span class="big">${h ? pad(m) : m}</span><span class="u">min</span>` : '');
-    $('#endTime', v).innerHTML = P.back ? `Back where you started by about <b>${clock(P.minutes)}</b> if you leave now` : `Finished by about <b>${clock(P.minutes)}</b> if you leave now`;
+    $('#endTime', v).innerHTML = `${P.back ? 'Back where you started' : 'Finished'} by about <b>${clock(P.minutes)}</b> if you leave ${leaveWords()}`;
     $('#less', v).disabled = P.minutes <= 30; $('#more', v).disabled = P.minutes >= MAX_MIN;
     drawHint();
   };
@@ -301,7 +322,7 @@ function renderPlan() {
   drawHint = () => {
     const box = $('#allHint', v);
     if (!P.suburbs.size) { box.hidden = true; return; }
-    const pool = (preSeason() ? state.displays : state.displays.filter(litTonight)).filter(d => P.suburbs.has(d.suburb));
+    const pool = (preSeason() ? state.displays.filter(d => !offTonight(d)) : state.displays.filter(onTonight)).filter(d => P.suburbs.has(d.suburb));
     if (!pool.length) { box.hidden = false; box.innerHTML = 'No displays are on tonight in the suburbs you picked.'; return; }
     const t = tourMinutes({ start: P.start, displays: pool, returnToStart: P.back, slow: CONFIG.slowDriving });
     const need = Math.ceil(t.minutes / 15) * 15;
@@ -322,7 +343,43 @@ function renderPlan() {
   $$('[data-back]', v).forEach(b => b.onclick = () => { P.back = b.dataset.back === '1'; $$('[data-back]', v).forEach(x => x.setAttribute('aria-pressed', x === b)); drawTime(); });
   drawTime();
 
+  $('#leaveAt', v).onchange = e => { P.leave = e.target.value === '' ? null : +e.target.value; drawTime(); };
   $('#findBtn', v).onclick = findDrives;
+}
+
+// "Now", then every half hour from the next one until 11:30pm (from 4pm when it's still daytime)
+function leaveOptions() {
+  const P = state.plan, now = new Date(), c = now.getHours() * 60 + now.getMinutes();
+  if (P.leave != null && leaveDate() - now < 60000) P.leave = null; // a time that has come and gone
+  const opts = [];
+  for (let m = Math.max(Math.ceil((c + 1) / 30) * 30, 16 * 60); m <= 23 * 60 + 30; m += 30) opts.push(m);
+  if (P.leave != null && !opts.includes(P.leave)) opts.push(P.leave);
+  return `<option value="" ${P.leave == null ? 'selected' : ''}>Now</option>` + opts.sort((a, b) => a - b)
+    .map(m => `<option value="${m}" ${P.leave === m ? 'selected' : ''}>${clockText(m)}</option>`).join('');
+}
+
+// ---------- Before you go: anything about tonight's lights worth knowing before you set off ----------
+function beforeYouGo(r, { stops = true } = {}) {
+  const P = state.plan, lc = leaveClock(), out = [];
+  const n = (k, one, many) => (k === 1 ? one : many.replace('#', k));
+  if (daytime(lc)) out.push(`It's only ${clockText(lc)}, so the lights won't be on yet and these times don't allow for when each display is on. <button class="linkbtn" type="button" data-later>Plan for 7:30pm tonight</button>`);
+  else if (nightMinutes(lc) < DARK) out.push(`It's still light at ${clockText(lc)}. Christmas lights look best once it's dark, from about ${clockText(DARK)}. <button class="linkbtn" type="button" data-later>Plan for 7:30pm instead</button>`);
+  if (P.hoursUsed && stops) {
+    for (const s of r.stops) {
+      if (!s.hours) continue;
+      const reach = s.arriveMin + s.waitMin, a = esc(s.display.address);
+      if (s.waitMin >= 1) out.push(`You'll get to <b>${a}</b> a little early. Its lights come on at ${clockText(s.hours.on)}, so we've allowed ${Math.round(s.waitMin)} min to wait.`);
+      else if (s.hours.close - reach < 30) out.push(`<b>${a}</b> switches off at ${clockText(s.hours.off)} and you'll get there at about ${clock(reach).replace(' ', '')}, ${s === r.stops[0] ? "so it's your first stop" : "so don't stay too long at the stops before it"}.`);
+    }
+  }
+  const off = P.leftOut?.off.length || 0, closed = P.leftOut?.closed.length || 0;
+  if (off) out.push(`${n(off, '1 display has', '# displays have')} been switched off tonight by ${n(off, 'its owner', 'their owners')} (bad weather, or a problem with the lights), so we've left ${n(off, 'it', 'them')} out.`);
+  if (closed) out.push(`${n(closed, '1 display has', '# displays have')} already switched off for the night, so we've left ${n(closed, 'it', 'them')} out.`);
+  if (!out.length) return '';
+  return `<div class="card byg"><h2>Before you go</h2><ul>${out.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
+}
+function wireBeforeYouGo(v) {
+  $$('[data-later]', v).forEach(b => b.onclick = () => { const P = state.plan; P.leave = 19 * 60 + 30; P.step = 'form'; renderPlan(); scrollTop(); findDrives(); });
 }
 
 function useMyLocation(btn, status, done) {
@@ -353,19 +410,35 @@ async function findDrives() {
   const P = state.plan, v = $('#view-plan'), status = $('#planStatus', v), btn = $('#findBtn', v);
   if (!P.start) { status.className = 'status err'; status.textContent = 'Choose where you are starting first.'; $('#startBox input', v)?.focus(); return; }
   if (!state.displays.length) { status.className = 'status err'; status.innerHTML = 'No displays are on the map yet. Got lights? <a href="#add">Be the first to add yours</a>.'; return; }
-  let pool = preSeason() ? state.displays : state.displays.filter(litTonight);
-  if (P.suburbs.size) pool = pool.filter(d => P.suburbs.has(d.suburb));
+  // Fresh details first if ours are a few minutes old (someone may have switched their lights off since)
+  if (Date.now() - (state.loadedAt || 0) > 3 * 60000) { status.className = 'status'; status.textContent = 'Checking which lights are on…'; await loadDisplays(); }
+  const area = P.suburbs.size ? state.displays.filter(d => P.suburbs.has(d.suburb)) : state.displays;
+  const lc = leaveClock(), useHours = !daytime(lc);
+  // Left out, so we can say why: switched off tonight, or already off for the night by the time you leave
+  const closed = d => { const h = parseHours(d.hours); return useHours && h && h.off - nightMinutes(lc) < LAST_CALL; };
+  P.leftOut = { off: area.filter(d => litTonight(d) && offTonight(d)), closed: area.filter(d => onTonight(d) && closed(d)) };
+  let pool = (preSeason() ? area.filter(d => !offTonight(d)) : area.filter(onTonight)).filter(d => !closed(d));
   const list = shortlist(P.start, pool, P.minutes);
   if (!list.length) {
     status.className = 'status err';
+    if (!pool.length && (P.leftOut.off.length || P.leftOut.closed.length)) { status.textContent = 'All the displays there are switched off for tonight. Try other suburbs.'; return; }
     status.textContent = P.suburbs.size ? 'No displays in those suburbs fit that time. Add more time or pick other suburbs.' : 'No displays are close enough for that time. Try adding more time.';
     return;
   }
   btn.disabled = true; status.className = 'status'; status.textContent = 'Working out the best drives…';
   const matrix = await svc.roadMatrix([P.start, ...list]);
-  const routes = planRoutes({ displays: list, matrix, budgetMin: P.minutes, returnToStart: P.back, slow: CONFIG.slowDriving });
+  const routes = planRoutes({ displays: list, matrix, budgetMin: P.minutes, returnToStart: P.back, slow: CONFIG.slowDriving, leaveClock: useHours ? lc : null });
+  P.hoursUsed = useHours;
   btn.disabled = false; status.textContent = '';
-  if (!routes.length) { status.className = 'status err'; status.textContent = 'Nothing fits in that time. Try a little longer.'; return; }
+  if (!routes.length) {
+    status.className = 'status err';
+    const firstOn = Math.min(...list.map(d => parseHours(d.hours)?.on ?? Infinity));
+    if (useHours && firstOn < Infinity && nightMinutes(lc) + P.minutes < firstOn + 10) {
+      status.innerHTML = `The lights there don't come on until ${clockText(firstOn)}. <button class="linkbtn" type="button" data-later>Plan for 7:30pm tonight</button>`;
+      wireBeforeYouGo(v);
+    } else status.textContent = 'Nothing fits in that time. Try a little longer.';
+    return;
+  }
   P.routes = routes; P.chosen = 0; P.lines = []; P.step = 'results'; P.pool = pool; P.allMin = null;
   renderPlan(); scrollTop();
   // Road lines arrive a moment later and are drawn when ready
@@ -449,6 +522,7 @@ function renderResults(v) {
     <p class="note">From ${esc(P.start.title)} · ${fmtDurText(P.minutes)} · ${P.back ? 'back to the start' : 'finish anywhere'}</p>
     <div class="map" id="planMap"></div>
     ${est ? '<p class="estimate">Driving times are estimates right now (the road map service didn\'t answer). The route still works.</p>' : ''}
+    ${beforeYouGo(P.routes[P.chosen], { stops: false })}
     ${P.routes.map((r, i) => `
       <div class="card option c${i + 1}" data-i="${i}" aria-current="${i === P.chosen}">
         <div><div class="label">Drive ${i + 1}</div><h2>${esc(r.title)}</h2><p class="sub">${esc(r.blurb)} · ${[...new Set(r.stops.map(s => s.display.suburb))].slice(0, 3).map(esc).join(', ')}</p></div>
@@ -462,6 +536,7 @@ function renderResults(v) {
         <button class="btn primary wide" type="button" data-choose="${i}">Choose this drive</button>
       </div>`).join('')}`;
   $('#backForm', v).onclick = () => { P.step = 'form'; renderPlan(); };
+  wireBeforeYouGo(v);
   const map = state.maps.plan = makeMap($('#planMap', v));
   fitTo(map, [P.start, ...P.routes.flatMap(r => r.stops.map(s => s.display))]);
   drawLines();
@@ -485,22 +560,24 @@ function renderRoute(v) {
       <div class="fig"><div class="v">${clock(r.totalMin).replace(/ ([ap]m)$/, '<small>$1</small>')}</div><div class="s">${P.back ? 'Back by' : 'Done by'}</div></div>
     </div>
     <div class="map" id="planMap"></div>
+    ${beforeYouGo(r)}
     <button class="btn go wide" type="button" id="startDrive">${ICON.nav}Start the drive</button>
     <p class="note">The app talks you through each turn and tells you when you've arrived. Your phone will ask to share your location: tap Allow.</p>
     <ol class="stops">
-      <li class="stopr"><span class="num" style="background:var(--pine)">S</span><div><b>${esc(P.start.title)}</b><small>Leave now</small></div><span class="t">${clock(0)}</span></li>
+      <li class="stopr"><span class="num" style="background:var(--pine)">S</span><div><b>${esc(P.start.title)}</b><small>Leave ${leaveWords()}</small></div><span class="t">${clock(0)}</span></li>
       ${r.stops.map((s, k) => `<li class="stopr"><span class="num">${k + 1}</span>
-        <div><b>${esc(s.display.address)}</b><small>${esc(s.display.suburb)} · ${sizeName(s.display.size)}${s.display.viewing === 'walk' ? ' · park and walk' : ''}</small></div>
+        <div><b>${esc(s.display.address)}</b><small>${esc(s.display.suburb)} · ${sizeName(s.display.size)}${s.display.viewing === 'walk' ? ' · park and walk' : ''}${s.hours ? ` · on ${clockText(s.hours.on)} to ${clockText(s.hours.off)}` : ''}</small></div>
         <span class="t">${clock(s.arriveMin)}</span></li>`).join('')}
       ${P.back ? `<li class="stopr"><span class="num" style="background:var(--pine)">S</span><div><b>Back to the start</b><small>${fmtDurText(r.backMin)} drive</small></div><span class="t">${clock(r.totalMin)}</span></li>` : ''}
     </ol>
-    <p class="note">Times assume you leave now and allow for driving slowly past the lights.</p>
+    <p class="note">Times assume you leave ${leaveWords()} and allow for driving slowly past the lights.</p>
     <div class="card">
       <h2>Prefer Google Maps for the whole way?</h2>
       <p class="note">Google only takes a few stops at a time on a phone, so the drive is split into parts. Open each part in turn.</p>
       <div class="legs">${legs.map(l => `<a class="btn" href="${l.url}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}</div>
     </div>`;
   $('#backRes', v).onclick = () => { P.step = 'results'; renderPlan(); };
+  wireBeforeYouGo(v);
   $('#startDrive', v).onclick = startDrive;
   const map = state.maps.plan = makeMap($('#planMap', v));
   fitTo(map, routePoints(r));
@@ -546,8 +623,8 @@ const driveTarget = () => {
 function startDrive() {
   const P = state.plan;
   P.driveAt = 0; P.step = 'drive';
-  P.drive = { voice: true, pos: null, acc: 99, guide: null, loading: false, arrived: false, manual: false, lastReroute: 0, watch: null, fixes: 0 };
-  speak("Let's go! I'll talk you through each turn.");
+  P.drive = { voice: true, pos: null, acc: 99, guide: null, loading: false, arrived: false, manual: false, lastReroute: 0, watch: null, fixes: 0, skipped: 0 };
+  headToNext("Let's go! I'll talk you through each turn. ", false);
   keepAwake(true);
   if (!navigator.geolocation) P.drive.manual = true;
   else {
@@ -598,6 +675,7 @@ function setInstr(arrow, n, u, text, soon = false) {
 function updateGuide() {
   const P = state.plan, D = P.drive, t = driveTarget();
   if (!D || !t || !D.pos) return;
+  if (D.loading && !D.guide) return; // still checking the next stop, or getting directions
   let toDest;
   if (D.guide) {
     const g = D.guide.update(D.pos, D.acc);
@@ -653,7 +731,7 @@ function onArrive() {
   try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) { /* none */ }
   if (t.kind === 'home') {
     speak("You're back at the start. That's the lot. Merry Christmas!");
-    return showArrival(`<div class="label">All done</div><h1>You're back!</h1><p style="margin:0">You saw ${r.count} displays. Merry Christmas!</p>
+    return showArrival(`<div class="label">All done</div><h1>You're back!</h1><p style="margin:0">You saw ${sawText()}. Merry Christmas!</p>
       <button class="btn go wide" type="button" id="arrNext">Finish</button>`, () => { P.driveAt++; endDrive(); });
   }
   const d = t.d, k = P.driveAt, last = k === r.stops.length - 1;
@@ -696,21 +774,62 @@ function advance() {
   closeArrival();
   P.driveAt++;
   Object.assign(D, { guide: null, line: null, arrived: false, noRoute: false, loading: false });
+  headToNext('');
+}
+
+// Before heading to a stop, check it's still worth going: switched off tonight by its owner, or off by the
+// time we'd get there? Then skip it, say why, and go to the next one.
+async function headToNext(say, render = true) {
+  const P = state.plan, D = P.drive; if (!D) return;
+  D.loading = true; // hold the directions until we've checked
+  if (render) { renderPlan(); scrollTop(); }
+  for (;;) {
+    const t = driveTarget();
+    if (!t || t.kind === 'home') break;
+    const prev = P.driveAt > 0 ? P.routes[P.chosen].stops[P.driveAt - 1].display : P.start;
+    const why = await whySkip(t.d, D.pos || [prev.lat, prev.lng]);
+    if (state.plan.drive !== D) return; // the drive ended meanwhile
+    if (!why) break;
+    say += why + ' '; D.skipped++; P.driveAt++; toast(why);
+  }
+  D.loading = false;
   const t = driveTarget();
-  if (!t) return endDriveDone();
-  speak(t.kind === 'home' ? 'Heading back to the start' : `Heading to stop ${P.driveAt + 1}, ${t.d.address}`);
-  renderPlan(); scrollTop();
+  if (!t) { speak(say); return endDriveDone(); }
+  let extra = '';
+  if (t.kind === 'stop') {
+    const h = parseHours(t.d.hours), now = new Date(), c = nightMinutes(now.getHours() * 60 + now.getMinutes());
+    if (h && !daytime(now.getHours() * 60) && c < h.on - 2) extra = ` Its lights come on at ${clockText(h.on)}.`;
+  }
+  speak(say + (t.kind === 'home' ? 'Heading back to the start.' : `Heading to stop ${P.driveAt + 1}, ${t.d.address}.${extra}`));
+  if (P.step === 'drive') renderPlan();
   if (D.pos) loadLeg();
 }
 
+async function whySkip(d, from) {
+  const S = state.store;
+  let fresh;
+  try { fresh = S && S.getDisplay ? await Promise.race([S.getDisplay(d.id), new Promise(r => setTimeout(() => r(undefined), 4000))]) : undefined; }
+  catch (e) { fresh = undefined; } // no signal: go on what we know
+  if (fresh === null) return `${d.address} isn't on the map any more, so we'll skip it.`;
+  const x = fresh || d;
+  if (offTonight(x)) return `${d.address} has switched its lights off tonight, so we'll skip it.`;
+  const h = parseHours(x.hours), now = new Date(), c = now.getHours() * 60 + now.getMinutes();
+  if (h && !daytime(c)) {
+    const eta = (metres(from, [d.lat, d.lng]) * 1.4 / 1000 / 32) * 60 * CONFIG.slowDriving + 1; // minutes, roughly
+    if (nightMinutes(c) + eta > h.off - LAST_CALL) return `${d.address} switches its lights off at ${clockText(h.off)}, so we'll skip it.`;
+  }
+  return '';
+}
+
+const sawText = () => { const P = state.plan, k = P.routes[P.chosen].count - (P.drive?.skipped || 0); return k === 1 ? '1 display' : `${k} displays`; };
 function endDriveDone() {
-  const P = state.plan, r = P.routes[P.chosen];
+  const P = state.plan, r = P.routes[P.chosen], saw = sawText();
   if (P.drive && P.drive.watch != null) navigator.geolocation.clearWatch(P.drive.watch);
   keepAwake(false); closeArrival();
   P.drive = null; P.step = 'drive-done';
   const v = $('#view-plan');
   v.className = 'view';
-  v.innerHTML = `<div class="card"><h1>That's the lot!</h1><p style="margin:0">You saw ${r.count} displays. Merry Christmas!</p>
+  v.innerHTML = `<div class="card"><h1>That's the lot!</h1><p style="margin:0">You saw ${saw}. Merry Christmas!</p>
     <button class="btn go wide" type="button" id="again">Plan another drive</button></div>`;
   $('#again', v).onclick = () => { P.step = 'form'; renderPlan(); };
 }
@@ -831,6 +950,7 @@ function renderMapTab() {
       <div class="sz" style="display:flex;gap:8px;flex-wrap:wrap"><span class="tag gold">${stars(d.size)} ${sizeName(d.size)}</span>
         ${d.viewing === 'walk' ? '<span class="tag">Park and walk</span>' : ''}${(d.features || []).map(f => `<span class="tag">${esc(FEATURES[f] || f)}</span>`).join('')}</div>
       ${d.notes ? `<p style="margin:0">${esc(d.notes)}</p>` : ''}
+      ${offTonight(d) ? '<p class="pinwarn" style="margin:0"><b>Switched off tonight</b> by the owner (bad weather, or a problem with the lights). Back on tomorrow.</p>' : ''}
       <p class="note">${d.hours ? `Lights on ${esc(d.hours)}` : ''}${!litTonight(d) && !preSeason() ? ' · not on tonight' : ''}</p>
       <a class="btn go wide" href="${svc.navigateUrl(d)}" target="_blank" rel="noopener">${ICON.nav}Directions</a>
       <button class="btn wide seenbtn" type="button" id="seenBtn" aria-pressed="${seen.has(d.id)}">${seenBtn()}</button></div>`;
@@ -867,7 +987,7 @@ function renderNearMe(v) {
         <button type="button" data-near="hide" aria-pressed="${!!N.hideSeen}">Hide ones I've seen</button></div>
       <ul class="list" id="nearList">${list.map(({ d, m }) => { const f = fmtDist(m);
         return `<li><button class="lrow${pics ? ' withpic' : ''}" type="button" data-id="${esc(d.id)}">${pics ? thumbHTML(d) : ''}
-          <span><b>${esc(d.address)}</b><small><span class="dist">${f.n} ${f.u}</span> · about ${driveMins(m)} min drive · ${esc(d.suburb)}</small></span>
+          <span><b>${esc(d.address)}</b><small><span class="dist">${f.n} ${f.u}</span> · about ${driveMins(m)} min drive · ${esc(d.suburb)}${offTonight(d) ? ' · <b>off tonight</b>' : ''}</small></span>
           ${seen.has(d.id) ? `<span class="seentick" aria-label="Seen">${ICON.tick}</span>` : `<span class="stars">${stars(d.size)}</span>`}</button></li>`; }).join('')
         || `<li class="group">${N.hideSeen ? "You've seen them all. Nice work!" : 'No displays yet'}</li>`}</ul>
       <button class="btn wide" type="button" id="nearAgain" style="margin-top:12px">${ICON.locate}Update for where I am now</button>`;
@@ -942,7 +1062,7 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
     size: d.size || 0, features: new Set(d.features || []), viewing: d.viewing || 'drive',
     photo: undefined // undefined = unchanged, null = taken off, { image, thumb } = a new one
   };
-  const [hOn, hOff] = String(d.hours || '7pm – 10pm').split(/\s*–\s*/);
+  const [hOn, hOff] = String(d.hours || '7pm – 10pm').split(/\s*–\s*/).map(tidyHour);
   const heading = mode === 'new' ? 'Add your Christmas lights' : mode === 'admin' ? 'Edit this display' : 'Edit your display';
   v.innerHTML = `
     ${mode !== 'new' ? '<button class="back" type="button" id="formBack">‹ Back</button>' : ''}
@@ -984,8 +1104,8 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
             <div class="field"><label for="until">Until</label><input type="date" id="until" value="${esc(d.until ?? CONFIG.season.until)}"></div>
           </div>
           <div class="row2">
-            <div class="field"><label for="hFrom">Lights on</label><select id="hFrom">${[...new Set([...HOURS_FROM, hOn])].map(h => `<option ${h === hOn ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
-            <div class="field"><label for="hTo">Lights off</label><select id="hTo">${[...new Set([...HOURS_TO, hOff || '10pm'])].map(h => `<option ${h === (hOff || '10pm') ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
+            <div class="field"><label for="hFrom">Lights on</label><select id="hFrom">${[...new Set([...HOURS_FROM, hOn].filter(h => clockMinutes(h) != null))].sort((a, b) => clockMinutes(a) - clockMinutes(b)).map(h => `<option ${h === hOn ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
+            <div class="field"><label for="hTo">Lights off</label><select id="hTo">${[...new Set([...HOURS_TO, hOff || '10pm'].filter(h => clockMinutes(h) != null))].sort((a, b) => nightMinutes(clockMinutes(a)) - nightMinutes(clockMinutes(b))).map(h => `<option ${h === (hOff || '10pm') ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
           </div>
         </div>
         <div class="card" id="photoCard">
@@ -1118,6 +1238,7 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
     }
     const from = $('#from', v).value, until = $('#until', v).value;
     if (from && until && until < from) return err('The "Until" date is before the "From" date.', $('#until', v));
+    if (nightMinutes(clockMinutes($('#hTo', v).value)) <= nightMinutes(clockMinutes($('#hFrom', v).value))) return err('"Lights off" needs to be after "Lights on".', $('#hTo', v));
     const btn = $('#addBtn', v); btn.disabled = true; status.className = 'status'; status.textContent = mode === 'new' ? 'Sending…' : 'Saving…';
     const entry = {
       address: F.place.title, suburb: $('#suburb', v).value.trim() || F.place.suburb, lat: F.place.lat, lng: F.place.lng,
@@ -1189,6 +1310,11 @@ async function renderAdd() {
           <span class="tag ${d.status === 'approved' ? 'gold' : ''}">${d.status === 'approved' ? 'On the map' : 'Waiting for a check'}</span></div>
         ${d.thumb ? `<img class="minipic" src="${esc(d.thumb)}" alt="Your photo">` : ''}
         ${displaySummary(d)}
+        ${d.status === 'approved' ? (offTonight(d)
+          ? `<div class="offbox on"><p style="margin:0"><b>Your lights are switched off tonight.</b> Drives skip your house until tomorrow, when it turns itself back on.</p>
+             <button class="btn primary wide" type="button" data-mine="lightson">My lights are back on</button></div>`
+          : `<div class="offbox"><button class="btn wide" type="button" data-mine="lightsoff">${ICON.moon}Lights off tonight</button>
+             <p class="note" style="margin:0">Bad weather, or a problem with the lights? Tap this and drives will skip your house tonight. It turns itself back on tomorrow.</p></div>`) : ''}
         <div class="row2"><button class="btn" type="button" data-mine="edit">Edit</button><button class="btn danger" type="button" data-mine="remove">Remove</button></div>
         ${d.status === 'approved' ? '<a class="linkbtn" href="#map">See it on the map</a>' : ''}
       </div>`).join('') + '<p class="note on-page" style="text-align:center">Merry Christmas from Toowoomba Christmas Lights!</p>';
@@ -1196,6 +1322,14 @@ async function renderAdd() {
       const b = e.target.closest('[data-mine]'); if (!b) return;
       const d = mine.find(x => x.id === c.dataset.id);
       if (b.dataset.mine === 'edit') { A.editing = d; renderAdd(); scrollTop(); return; }
+      if (b.dataset.mine === 'lightsoff' || b.dataset.mine === 'lightson') {
+        const off = b.dataset.mine === 'lightsoff'; b.disabled = true;
+        state.store.setOffTonight(d.id, off).then(async () => {
+          await loadDisplays(); renderAdd();
+          toast(off ? 'Done. Drives will skip your house tonight.' : "Great, you're back on for tonight.");
+        }, () => { b.disabled = false; toast("That didn't work. Check you have signal and try again."); });
+        return;
+      }
       popup(`<h2>Remove your display?</h2><p style="margin:0">${esc(d.address)} will come off the map. You can add it again later.</p>`,
         [{ id: 'yes', text: 'Yes, remove it', cls: 'danger' }, { id: 'no', text: 'Keep it' }],
         async id => {
@@ -1296,7 +1430,7 @@ async function renderAdmin() {
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <div class="rowopts" id="opts-${esc(d.id)}"${open ? '' : ' hidden'}>
-      <small class="rowmeta">${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${d.hours ? ' · ' + esc(d.hours) : ''}</small>
+      <small class="rowmeta">${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${d.hours ? ' · ' + esc(d.hours) : ''}${offTonight(d) ? ' · <b>switched off tonight</b>' : ''}</small>
       ${d.thumb ? `<img class="minipic" src="${esc(d.thumb)}" alt=""><button class="linkbtn" type="button" data-nophoto="${esc(d.id)}">Remove the photo</button>` : ''}
       <span class="adminbtns">${S.update && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-edit="${esc(d.id)}">Edit</button>` : ''}${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" type="button" data-remove="${esc(d.id)}">Remove</button></span></div></li>`; }).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
     ${S.signOut ? '<button class="linkbtn on-page" type="button" id="signOut" style="color:#fff">Sign out of admin on this phone</button>' : ''}
@@ -1469,7 +1603,7 @@ async function refreshAdminTab() {
 }
 
 async function loadDisplays() {
-  try { state.displays = await state.store.listApproved(); }
+  try { state.displays = await state.store.listApproved(); state.loadedAt = Date.now(); }
   catch (e) { console.error(e); state.displays = []; toast("Couldn't load the displays. Check your signal."); }
 }
 

@@ -23,6 +23,46 @@ export function viewMinutes(d) {
   return m;
 }
 
+// ---------- Opening hours ----------
+// "7pm – 10pm" -> { on: 1140, off: 1320 } in minutes after midnight. An off time after midnight goes past 1440
+// ("7pm – 1am" -> off 1500). Older entries: "Dusk" counts as 7:30pm, "Late" as midnight. Unreadable -> null (any time).
+export const DUSK = 19 * 60 + 30;
+export function clockMinutes(text) {
+  const s = String(text || '').trim().toLowerCase();
+  if (s === 'dusk') return DUSK;
+  if (s === 'late' || s === 'midnight') return 24 * 60;
+  if (s === 'midday' || s === 'noon') return 12 * 60;
+  const m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
+  if (!m || +m[1] > 12 || +(m[2] || 0) > 59) return null;
+  return ((+m[1] % 12) + (m[3] === 'pm' ? 12 : 0)) * 60 + +(m[2] || 0);
+}
+export function parseHours(hours) {
+  const parts = String(hours || '').split(/\s*[–-]\s*/);
+  if (parts.length !== 2) return null;
+  const on = clockMinutes(parts[0]); let off = clockMinutes(parts[1]);
+  if (on == null || off == null) return null;
+  if (off <= on) off += 24 * 60; // switches off after midnight
+  return { on, off };
+}
+// "1140" -> "7pm", 1290 -> "9:30pm", 1440 -> "midnight", 1500 -> "1am"
+export function clockText(min) {
+  const m = ((Math.round(min) % 1440) + 1440) % 1440;
+  if (m === 0) return 'midnight';
+  const h = Math.floor(m / 60), mm = m % 60, h12 = h % 12 || 12;
+  return `${h12}${mm ? ':' + String(mm).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}`;
+}
+// The time of night as minutes after midday-before, so 12:30am (30) comes after 11pm (1380): 30 -> 1470
+export const nightMinutes = clockMin => (clockMin < 12 * 60 ? clockMin + 24 * 60 : clockMin);
+// A display's opening hours as minutes from when the drive leaves (leaveClock = minutes after midnight)
+export function windowFrom(d, leaveClock) {
+  const h = parseHours(d.hours);
+  if (!h) return null;
+  const leave = nightMinutes(leaveClock);
+  return { open: h.on - leave, close: h.off - leave, on: h.on, off: h.off };
+}
+// Arrive at least this many minutes before the lights go off, or it's not worth the trip
+export const LAST_CALL = 5;
+
 export function lightScore(d) {
   return (SIZES[d.size] || SIZES[2]).score;
 }
@@ -63,9 +103,25 @@ function rng(seed) {
 }
 
 // Builds and scores routes for one set of display values (weights)
-function makeSolver({ D, view, budget, returnToStart }) {
+function makeSolver({ D, view, budget, returnToStart, W = null }) {
   const n = view.length; // displays; node of display i is i + 1
   const legEnd = (order, pos) => (pos < order.length ? order[pos] + 1 : (returnToStart ? 0 : -1));
+  // Opening hours only matter if some display isn't on for the whole drive
+  const hasWin = !!W && W.some(w => w && (w.open > 0 || w.close < budget + 30));
+  // Minutes for the whole drive, waiting for lights to come on included; Infinity if a stop would be dark by then
+  function sim(order) {
+    let t = 0, prev = 0;
+    for (const c of order) {
+      t += D[prev][c + 1];
+      const w = W && W[c];
+      if (w) { if (t > w.close - LAST_CALL) return Infinity; if (t < w.open) t = w.open; }
+      t += view[c]; prev = c + 1;
+    }
+    if (returnToStart && order.length) t += D[prev][0];
+    return t;
+  }
+  // Can't get there before it switches off, even going straight there
+  const unreachable = c => !!(W && W[c] && D[0][c + 1] > W[c].close - LAST_CALL);
 
   function driveMin(order) {
     let t = 0, prev = 0;
@@ -74,9 +130,12 @@ function makeSolver({ D, view, budget, returnToStart }) {
     return t;
   }
   function totalMin(order) {
+    if (hasWin) return sim(order);
     let v = 0; for (const c of order) v += view[c];
     return driveMin(order) + v;
   }
+  // Untangling compares drives; with opening hours it compares whole drives that still work
+  const routeCost = order => (hasWin ? sim(order) : driveMin(order));
 
   // Cheapest place to slot display c into the route, and the minutes it adds
   function bestInsert(order, c) {
@@ -90,17 +149,33 @@ function makeSolver({ D, view, budget, returnToStart }) {
     return { add: best + view[c], at };
   }
 
+  // With opening hours: try the cheapest few places, keeping the first where every stop is still lit up
+  function timedInsert(order, c, total) {
+    const spots = [];
+    for (let p = 0; p <= order.length; p++) {
+      const a = p === 0 ? 0 : order[p - 1] + 1, b = legEnd(order, p);
+      spots.push({ p, cost: b === -1 ? D[a][c + 1] : D[a][c + 1] + D[c + 1][b] - D[a][b] });
+    }
+    spots.sort((x, y) => x.cost - y.cost);
+    for (const { p } of spots.slice(0, 5)) {
+      const trial = order.slice(); trial.splice(p, 0, c);
+      const t = sim(trial);
+      if (t < Infinity) return { add: t - total, at: p };
+    }
+    return { add: Infinity, at: -1 };
+  }
+
   // Untangle crossings: reverse stretches of the route while it makes the drive shorter
   function twoOpt(order) {
     if (order.length < 3) return order;
     let route = order.slice(), improved = true, guard = 0;
     while (improved && guard++ < 50) {
       improved = false;
-      const base = driveMin(route);
+      const base = routeCost(route);
       outer: for (let i = 0; i < route.length - 1; i++) {
         for (let k = i + 1; k < route.length; k++) {
           const cand = route.slice(0, i).concat(route.slice(i, k + 1).reverse(), route.slice(k + 1));
-          if (driveMin(cand) < base - 1e-6) { route = cand; improved = true; break outer; }
+          if (routeCost(cand) < base - 1e-6) { route = cand; improved = true; break outer; }
         }
       }
     }
@@ -113,9 +188,9 @@ function makeSolver({ D, view, budget, returnToStart }) {
     for (;;) {
       let pick = -1, pickAt = -1, pickAdd = 0, bestRatio = -Infinity;
       for (let c = 0; c < n; c++) {
-        if (used[c] || w[c] <= 0) continue;
-        const { add, at } = bestInsert(order, c);
-        if (total + add > budget + 1e-9) continue;
+        if (used[c] || w[c] <= 0 || unreachable(c)) continue;
+        const { add, at } = hasWin ? timedInsert(order, c, total) : bestInsert(order, c);
+        if (at < 0 || total + add > budget + 1e-9) continue;
         const ratio = (w[c] / (add + 0.5)) * (noise ? 1 + noise * (rand() - 0.5) : 1);
         if (ratio > bestRatio) { bestRatio = ratio; pick = c; pickAt = at; pickAdd = add; }
       }
@@ -127,6 +202,7 @@ function makeSolver({ D, view, budget, returnToStart }) {
   function value(order, w) { let v = 0; for (const c of order) v += w[c]; return v; }
 
   function solve(w, { restarts = 60, seed = 1 } = {}) {
+    if (hasWin) restarts = Math.min(restarts, 25); // each try costs more; still plenty
     const rand = rng(seed);
     let best = [], bestVal = -1, bestTime = Infinity;
     for (let r = 0; r < restarts; r++) {
@@ -161,7 +237,7 @@ function makeSolver({ D, view, budget, returnToStart }) {
     return route;
   }
 
-  return { solve, driveMin, totalMin };
+  return { solve, driveMin, totalMin, hasWin };
 }
 
 /**
@@ -173,13 +249,15 @@ function makeSolver({ D, view, budget, returnToStart }) {
  * @param {boolean} o.returnToStart finish back where you started
  * @param {number} o.slow     stretch on driving times for crawling past lights (1.2 = 20% slower)
  */
-export function planRoutes({ displays, matrix, budgetMin, returnToStart = true, slow = 1.2, seed = 7 }) {
+export function planRoutes({ displays, matrix, budgetMin, returnToStart = true, slow = 1.2, seed = 7, leaveClock = null }) {
   const n = displays.length;
   if (!n) return [];
   const D = matrix.durations.map(row => row.map(s => (s == null ? Infinity : (s * slow) / 60)));
   const view = displays.map(viewMinutes);
   const score = displays.map(lightScore);
-  const solver = makeSolver({ D, view, budget: budgetMin, returnToStart });
+  // Opening hours, as minutes from when you leave (only when we know when that is)
+  const W = leaveClock == null ? null : displays.map(d => windowFrom(d, leaveClock));
+  const solver = makeSolver({ D, view, budget: budgetMin, returnToStart, W });
 
   const most = solver.solve(score.map(s => 1 + 0.3 * s), { seed });
   const best = solver.solve(score.map(s => s * s), { seed: seed + 1 });
@@ -198,16 +276,16 @@ export function planRoutes({ displays, matrix, budgetMin, returnToStart = true, 
     const set = new Set(o.order);
     const dupe = out.some(r => overlap(set, new Set(r.order)) >= 0.75);
     if (dupe) continue;
-    out.push(describe(o, displays, matrix, D, view, returnToStart, slow));
+    out.push(describe(o, displays, matrix, D, view, returnToStart, slow, W));
   }
   // When the area is small enough that the drives come out alike, offer a shorter one instead,
   // so there's still a real choice (e.g. for tired kids)
   if (out.length < 3 && budgetMin >= 40) {
-    const quickSolver = makeSolver({ D, view, budget: budgetMin * 0.6, returnToStart });
+    const quickSolver = makeSolver({ D, view, budget: budgetMin * 0.6, returnToStart, W });
     const quick = quickSolver.solve(score.map(s => s * s), { seed: seed + 3 });
     const longest = out.length ? out[0].totalMin : Infinity;
     if (quick.length && quickSolver.totalMin(quick) < longest * 0.8) {
-      out.push(describe({ key: 'quick', title: 'Shorter drive', blurb: 'The best ones in less time', order: quick }, displays, matrix, D, view, returnToStart, slow));
+      out.push(describe({ key: 'quick', title: 'Shorter drive', blurb: 'The best ones in less time', order: quick }, displays, matrix, D, view, returnToStart, slow, W));
     }
   }
   return out;
@@ -218,14 +296,16 @@ function overlap(a, b) {
   return common / Math.max(1, Math.min(a.size, b.size));
 }
 
-function describe(o, displays, matrix, D, view, returnToStart, slow) {
-  let t = 0, drive = 0, metres = 0, prev = 0;
+function describe(o, displays, matrix, D, view, returnToStart, slow, W = null) {
+  let t = 0, drive = 0, metres = 0, prev = 0, wait = 0;
   const stops = [];
   for (const c of o.order) {
     const leg = D[prev][c + 1];
     drive += leg; t += leg; metres += matrix.distances[prev][c + 1] || 0;
-    stops.push({ display: displays[c], index: c, arriveMin: t, viewMin: view[c] });
-    t += view[c]; prev = c + 1;
+    const win = W && W[c];
+    const waitMin = win && t < win.open ? win.open - t : 0; // there before the lights come on
+    stops.push({ display: displays[c], index: c, arriveMin: t, waitMin, viewMin: view[c], hours: win ? { on: win.on, off: win.off, close: win.close } : null });
+    t += waitMin + view[c]; wait += waitMin; prev = c + 1;
   }
   let backMin = 0;
   if (returnToStart) {
@@ -233,7 +313,7 @@ function describe(o, displays, matrix, D, view, returnToStart, slow) {
   }
   return {
     key: o.key, title: o.title, blurb: o.blurb, order: o.order, stops,
-    count: stops.length, totalMin: t, driveMin: drive, viewMin: t - drive, km: metres / 1000, backMin,
+    count: stops.length, totalMin: t, driveMin: drive, viewMin: t - drive - wait, waitMin: wait, km: metres / 1000, backMin,
     estimated: !!matrix.estimated, slow
   };
 }
