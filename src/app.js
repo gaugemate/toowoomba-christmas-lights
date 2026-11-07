@@ -1511,6 +1511,8 @@ async function renderAdmin() {
     const lines = await S.diagnose();
     let ver = '?'; try { ver = (await caches.keys()).filter(k => k.startsWith('tcl-app-')).join(', ') || 'none'; } catch (e) { /* no caches */ }
     lines.unshift(['App version', ver]);
+    const nav = $('nav.tabs').getBoundingClientRect(), safe = getComputedStyle($('nav.tabs')).paddingBottom;
+    lines.splice(1, 0, ['Screen', `screen ${screen.width}×${screen.height} · window ${innerWidth}×${innerHeight} · page ${document.documentElement.clientHeight} · app ${appHeight()} · menu ends ${Math.round(nav.bottom)} (padding ${safe}) · home screen ${navigator.standalone === true ? 'yes' : 'no'}`]);
     $('#diagOut', v).innerHTML = `<div class="card"><h2>What the database says</h2>
       <ul class="diag">${lines.map(([k, val]) => `<li><b>${esc(k)}</b><span>${esc(String(val))}</span></li>`).join('')}</ul>
       <p class="note">Take a screenshot of this and send it to Claude.</p></div>`;
@@ -1607,14 +1609,19 @@ async function loadDisplays() {
   catch (e) { console.error(e); state.displays = []; toast("Couldn't load the displays. Check your signal."); }
 }
 
-// In the browser, size the app to the visible window (its toolbars come and go). On the home screen there
-// are no toolbars, and iPhones sometimes report the window as shorter than the screen, which left a green
-// strip under the menu, so there the app simply fills the whole screen.
-const homeScreen = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-function sizeApp() {
-  if (homeScreen()) document.documentElement.style.removeProperty('--app-h');
-  else document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
+// Size the app to the visible window (in a browser its toolbars come and go). As an iPhone home-screen app
+// there are no toolbars, but iOS can report the window (and the page) as shorter than the screen, by about
+// the status bar, which left a green strip under the menu. There the app fills the iPhone's real screen.
+function appHeight() {
+  let h = window.innerHeight;
+  if (navigator.standalone === true) { // only iPhones and iPads say this, and only from the home screen
+    const sw = screen.width, sh = screen.height, portrait = window.matchMedia('(orientation: portrait)').matches;
+    const fullW = portrait ? Math.min(sw, sh) : Math.max(sw, sh), fullH = portrait ? Math.max(sw, sh) : Math.min(sw, sh);
+    if (Math.abs(window.innerWidth - fullW) < 2) h = Math.max(h, fullH); // the app has the whole screen (not iPad split view)
+  }
+  return h;
 }
+function sizeApp() { document.documentElement.style.setProperty('--app-h', appHeight() + 'px'); }
 
 // The last list of displays this phone saw (saved by the database code), so the app can open at once
 function cachedDisplays() {
@@ -1657,7 +1664,8 @@ function setAdminTab(yes) {
 }
 
 async function start() {
-  sizeApp(); window.addEventListener('resize', sizeApp);
+  sizeApp(); window.addEventListener('resize', sizeApp); window.addEventListener('orientationchange', () => setTimeout(sizeApp, 300));
+  setTimeout(sizeApp, 500); setTimeout(sizeApp, 2000); // iOS can settle its sizes a moment after opening
   $('#areaChip').innerHTML = `${ICON.pin}${esc(CONFIG.area)}`;
   const cached = cachedDisplays();
   if (cached) state.displays = cached;

@@ -353,5 +353,3 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .offbox{display:flex;flex-direction:column;gap:8px}
 .offbox.on{background:var(--red-soft);border-radius:12px;padding:12px}
 
-/* Home-screen app: always fill the whole screen, down to the bottom edge */
-@media (display-mode: standalone){#appShell{height:auto;bottom:0}}
