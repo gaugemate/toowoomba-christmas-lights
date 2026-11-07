@@ -493,7 +493,18 @@ const nearSameSpot = (a, b) => metres([a.lat, a.lng], [b.lat, b.lng]) < 12;
 // Fit the map to these points, never zooming in closer than maxZoom (so one dot doesn't fill the screen)
 function fitTo(map, pts, maxZoom = 18) {
   if (!pts.length) return;
-  map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])).pad(0.12), { animate: false, maxZoom });
+  const b = L.latLngBounds(pts.map(p => [p.lat, p.lng])).pad(0.12);
+  map.fitBounds(b, { animate: false, maxZoom });
+  // The phone may still be laying out the page (fonts, images, the menu), so the map's size can change just
+  // after it's made: check its size and fit again, so every stop is in view (unless someone has moved it since)
+  let z = map.getZoom(), c = map.getCenter();
+  for (const ms of [150, 600]) setTimeout(() => {
+    if (!map._container || !map._container.isConnected) return;
+    if (map.getZoom() !== z || !map.getCenter().equals(c, 1e-6)) return;
+    map.invalidateSize({ animate: false });
+    map.fitBounds(b, { animate: false, maxZoom });
+    z = map.getZoom(); c = map.getCenter();
+  }, ms);
 }
 const TOWN_ZOOM = 12;   // all of Toowoomba on a phone screen
 const SUBURB_ZOOM = 14; // one suburb
@@ -560,10 +571,10 @@ function renderRoute(v) {
       <div class="fig"><div class="v">${fmtDur(r.totalMin)}</div><div class="s">All up</div></div>
       <div class="fig"><div class="v">${clock(r.totalMin).replace(/ ([ap]m)$/, '<small>$1</small>')}</div><div class="s">${P.back ? 'Back by' : 'Done by'}</div></div>
     </div>
-    <div class="map" id="planMap"></div>
     ${beforeYouGo(r)}
     <button class="btn go wide" type="button" id="startDrive">${ICON.nav}Start the drive</button>
     <p class="note">The app talks you through each turn and tells you when you've arrived. Your phone will ask to share your location: tap Allow.</p>
+    <div class="map" id="planMap"></div>
     <ol class="stops">
       <li class="stopr"><span class="num" style="background:var(--pine)">S</span><div><b>${esc(P.start.title)}</b><small>Leave ${leaveWords()}</small></div><span class="t">${clock(0)}</span></li>
       ${r.stops.map((s, k) => `<li class="stopr"><span class="num">${k + 1}</span>
