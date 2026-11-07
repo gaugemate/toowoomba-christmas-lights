@@ -159,7 +159,7 @@ input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-sea
 
 /* Maps */
 .map{height:min(44vh,380px);border-radius:14px;overflow:hidden;background:#dfe7e3;border:0;z-index:0}
-.map.tall{height:min(56vh,520px)}
+.map.tall{height:min(40vh,360px)} /* short enough that the list below peeks out, so people know to scroll */
 .map.small{height:220px;border:2px solid var(--edge)}
 .leaflet-container{font-family:var(--f-body);background:#dfe7e3}
 .leaflet-control-attribution{font-size:10px}
@@ -353,3 +353,4 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .offbox{display:flex;flex-direction:column;gap:8px}
 .offbox.on{background:var(--red-soft);border-radius:12px;padding:12px}
 
+.scrollhint{margin:-4px 0 0;text-align:center;font-weight:600}

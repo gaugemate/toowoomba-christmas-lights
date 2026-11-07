@@ -904,8 +904,9 @@ function renderMapTab() {
   v.innerHTML = `
     <h1>All the lights</h1>
     <p class="note">${state.displays.length} ${state.displays.length === 1 ? 'Display' : 'Displays'}. Bigger dots are bigger displays.${seenCount() ? ` Green ticks are ones you've seen.` : ''}</p>
-    ${state.displays.length ? `<button class="btn primary wide" type="button" id="nearBtn">${ICON.locate}Near me now</button>` : ''}
+    ${state.displays.length ? `<button class="btn wide" type="button" id="nearBtn">${ICON.locate}Near me now</button>` : ''}
     <div class="map tall" id="allMap"></div>
+    ${state.displays.length > 1 ? '<p class="note scrollhint">Scroll down for the list of every display ↓</p>' : ''}
     <div id="sheet"></div>
     ${state.displays.length ? '' : `<div class="card"><h2>The ${new Date().getFullYear()} lights are coming!</h2>
       <p class="note" style="margin:0">No displays on the map yet. Got lights up? Add them so everyone can find you.</p>
