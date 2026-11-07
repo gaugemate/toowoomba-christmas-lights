@@ -23,6 +23,7 @@ const ICON = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   route: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/></svg>',
   arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  printer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg>',
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
   tick: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
   camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.6"/></svg>',
@@ -915,7 +916,12 @@ function renderMapTab() {
       <option value="">Every suburb (${state.displays.length})</option>
       ${subs.map(([s, n]) => `<option value="${esc(s)}" ${s === filter ? 'selected' : ''}>${esc(s)} (${n})</option>`).join('')}
     </select>
-    <ul class="list" id="dispList">${listHTML(shown)}</ul>`;
+    <ul class="list" id="dispList">${listHTML(shown)}</ul>
+    ${state.displays.length ? `<div class="card printcard"><h2>Prefer paper?</h2>
+      <p class="note" style="margin:0">Get every display as a neat list, sorted by suburb, to print or email to yourself.</p>
+      <button class="btn go wide" type="button" id="printList">${ICON.printer}Print or save the list</button></div>` : ''}`;
+  const pl = $('#printList', v);
+  if (pl) pl.onclick = () => printList(pl);
   const map = state.maps.all = makeMap($('#allMap', v));
   const markers = new Map();
   const spots = spreadPositions(shown);
@@ -966,6 +972,38 @@ function renderMapTab() {
     // The small preview shows at once; the full photo replaces it when it arrives
     if (d.thumb && state.store) state.store.getPhoto(d.id).then(img => { const el = $('#sheetPic', s); if (img && el) el.src = img; });
   }
+}
+
+// ---------- The printable list (PDF): print it, email it to yourself, or save it ----------
+async function printList(btn) {
+  const before = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Making your list…';
+  let blob;
+  try { blob = await (await import('./printlist.js')).makeListPdf(state.displays, FEATURES); }
+  catch (e) { console.error(e); toast("Couldn't make the list just now. Check you have signal and try again."); }
+  btn.disabled = false; btn.innerHTML = before;
+  if (!blob) return;
+  const name = 'Toowoomba-Christmas-Lights-list.pdf';
+  const file = new File([blob], name, { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  let canShare = false;
+  try { canShare = !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { canShare = false; }
+  const save = () => { const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); };
+  const share = async () => { try { await navigator.share({ files: [file], title: 'Toowoomba Christmas Lights: the list' }); } catch (e) { if (e.name !== 'AbortError') save(); } };
+  const n = state.displays.length;
+  popup(`<h2>Your list is ready</h2>
+    <p style="margin:0">${n === 1 ? 'The <b>1 display</b>' : `All <b>${n} displays</b>`}, sorted by suburb.</p>
+    ${canShare ? `<p class="note" style="margin:0"><b>Print it</b> and <b>Email it</b> open your phone's share menu. Tap <b>Print</b> there, or <b>Mail</b> to send it to yourself.</p>` : ''}`,
+    [{ id: 'print', text: `${ICON.printer}Print it`, cls: 'go' }, { id: 'email', text: 'Email it to myself', cls: 'primary' },
+      { id: 'save', text: 'Save it to my phone' }, { id: 'close', text: 'Close' }],
+    id => {
+      if (id === 'close') return;
+      if (canShare && id !== 'save') return share();
+      if (id === 'print') { if (!window.open(url, '_blank')) save(); return; }
+      save();
+      if (id === 'email') toast('Saved. Attach it to an email to yourself.');
+    });
+  setTimeout(() => URL.revokeObjectURL(url), 10 * 60000);
 }
 
 // ---------- Near me now: the displays closest to where you are, nearest first ----------

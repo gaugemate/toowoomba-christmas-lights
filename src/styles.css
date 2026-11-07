@@ -354,3 +354,4 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .offbox.on{background:var(--red-soft);border-radius:12px;padding:12px}
 
 .scrollhint{margin:-4px 0 0;text-align:center;font-weight:600}
+.printcard{margin-top:14px}
