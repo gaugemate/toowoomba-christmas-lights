@@ -1607,7 +1607,14 @@ async function loadDisplays() {
   catch (e) { console.error(e); state.displays = []; toast("Couldn't load the displays. Check your signal."); }
 }
 
-function sizeApp() { document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); }
+// In the browser, size the app to the visible window (its toolbars come and go). On the home screen there
+// are no toolbars, and iPhones sometimes report the window as shorter than the screen, which left a green
+// strip under the menu, so there the app simply fills the whole screen.
+const homeScreen = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function sizeApp() {
+  if (homeScreen()) document.documentElement.style.removeProperty('--app-h');
+  else document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
+}
 
 // The last list of displays this phone saw (saved by the database code), so the app can open at once
 function cachedDisplays() {
