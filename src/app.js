@@ -1610,17 +1610,12 @@ async function loadDisplays() {
   catch (e) { console.error(e); state.displays = []; toast("Couldn't load the displays. Check your signal."); }
 }
 
-// Size the app to the visible window (in a browser its toolbars come and go). As an iPhone home-screen app
-// there are no toolbars, but iOS can report the window (and the page) as shorter than the screen, by about
-// the status bar, which left a green strip under the menu. There the app fills the iPhone's real screen.
+// Size the app to the visible window (in a browser its toolbars come and go). As an iPhone home-screen app,
+// use the page's own height: iOS can report the window shorter than that. (Sizing to the full screen was
+// tried and cut the menu off: the iPhone doesn't show the page in the bottom strip.)
 function appHeight() {
   let h = window.innerHeight;
-  if (navigator.standalone === true) { // only iPhones and iPads say this, and only from the home screen
-    const sw = screen.width, sh = screen.height, portrait = window.matchMedia('(orientation: portrait)').matches;
-    const fullW = portrait ? Math.min(sw, sh) : Math.max(sw, sh), fullH = portrait ? Math.max(sw, sh) : Math.min(sw, sh);
-    if (Math.abs(window.innerWidth - fullW) < 2) h = Math.max(h, fullH); // the app has the whole screen (not iPad split view)
-  }
-  return h;
+  if (navigator.standalone === true) h = Math.max(h, document.documentElement.clientHeight);
 }
 function sizeApp() { document.documentElement.style.setProperty('--app-h', appHeight() + 'px'); }
 
