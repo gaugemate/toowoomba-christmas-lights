@@ -141,9 +141,15 @@ function popup(html, buttons, onButton = () => {}) {
 function closePopup() { const o = $('#popup'); if (o) o.remove(); }
 
 /* ---------- maps ---------- */
-function makeMap(el, { zoom = CONFIG.zoom, center = CONFIG.center } = {}) {
-  const map = L.map(el, { zoomControl: false, attributionControl: true }).setView(center, zoom);
-  L.control.zoom({ position: 'bottomright' }).addTo(map);
+// still: a picture of the map (no moving or zooming), so a finger on it scrolls the page.
+// twoFinger: on phones, one finger scrolls the page and two fingers move and zoom the map; tapping still works.
+const touchScreen = () => window.matchMedia('(pointer: coarse)').matches;
+function makeMap(el, { zoom = CONFIG.zoom, center = CONFIG.center, still = false, twoFinger = false } = {}) {
+  const lock = still ? { dragging: false, touchZoom: false, doubleClickZoom: false, scrollWheelZoom: false, boxZoom: false, keyboard: false }
+    : twoFinger && touchScreen() ? { dragging: false } : {};
+  const map = L.map(el, { zoomControl: false, attributionControl: true, ...lock }).setView(center, zoom);
+  if (!still) L.control.zoom({ position: 'bottomright' }).addTo(map);
+  if (twoFinger && touchScreen()) twoFingerHint(map, el);
   const tiles = L.tileLayer(CONFIG.tiles.url + (CONFIG.cartoKey ? `?key=${encodeURIComponent(CONFIG.cartoKey)}` : ''), { attribution: CONFIG.tiles.attribution, subdomains: CONFIG.tiles.subdomains, maxZoom: CONFIG.tiles.maxZoom }).addTo(map);
   // If the street pictures can't load (no signal, or a page that blocks them), say so rather than show a blank map
   let failed = 0, loaded = 0;
@@ -155,6 +161,17 @@ function makeMap(el, { zoom = CONFIG.zoom, center = CONFIG.center } = {}) {
   setTimeout(() => map.invalidateSize(), 50);
   return map;
 }
+// One finger dragging across a two-finger map: say how to move it (briefly), while the page scrolls as normal
+function twoFingerHint(map, el) {
+  let timer = 0;
+  el.addEventListener('touchmove', e => {
+    if (e.touches.length !== 1) return;
+    let h = el.querySelector('.fingerhint');
+    if (!h) { el.insertAdjacentHTML('beforeend', '<div class="fingerhint" aria-hidden="true"><b>Use two fingers to move the map</b><span>One finger scrolls the page. Tap a dot to see a display.</span></div>'); h = el.querySelector('.fingerhint'); }
+    h.classList.add('on'); clearTimeout(timer); timer = setTimeout(() => h.classList.remove('on'), 1600);
+  }, { passive: true });
+}
+
 function pinIcon(cls, size, text = '') {
   return L.divIcon({ className: '', html: `<div class="pin ${cls}" style="width:${size}px;height:${size}px">${text}</div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
@@ -445,7 +462,7 @@ async function findDrives() {
   // Road lines arrive a moment later and are drawn when ready
   routes.forEach((r, i) => {
     const pts = [P.start, ...r.stops.map(s => s.display), ...(P.back ? [P.start] : [])];
-    svc.roadLine(pts).then(res => { P.lines[i] = res.line; drawLines(); });
+    svc.roadLine(pts).then(res => { P.lines[i] = res.line; drawLines(); drawMinis(); });
   });
 }
 
@@ -528,16 +545,21 @@ function coverageLine(r) {
 function renderResults(v) {
   const P = state.plan;
   const est = P.routes.some(r => r.estimated);
+  const many = P.routes.length > 1;
+  state.maps.plan = null; // no big map here: each drive has its own small picture
   v.innerHTML = `
     <button class="back" type="button" id="backForm">‹ Change start or time</button>
-    <h1>${P.routes.length > 1 ? `${P.routes.length} drives to pick from` : 'Your drive'}</h1>
+    <h1>${many ? 'Pick your drive' : 'Your drive'}</h1>
     <p class="note">From ${esc(P.start.title)} · ${fmtDurText(P.minutes)} · ${P.back ? 'back to the start' : 'finish anywhere'}</p>
-    <div class="map" id="planMap"></div>
-    ${est ? '<p class="estimate">Driving times are estimates right now (the road map service didn\'t answer). The route still works.</p>' : ''}
+    <div class="card nextstep"><span aria-hidden="true">👇</span><p>${many
+      ? `We've planned ${P.routes.length} drives for you. Tap <b>Choose this drive</b> on the one you like. You'll see the stops and the map next.`
+      : `Here's the drive we've planned for you. Tap <b>Choose this drive</b> to see the stops and the map.`}</p></div>
     ${beforeYouGo(P.routes[P.chosen], { stops: false })}
+    ${est ? '<p class="estimate">Driving times are estimates right now (the road map service didn\'t answer). The route still works.</p>' : ''}
     ${P.routes.map((r, i) => `
-      <div class="card option c${i + 1}" data-i="${i}" aria-current="${i === P.chosen}">
-        <div><div class="label">Drive ${i + 1}</div><h2>${esc(r.title)}</h2><p class="sub">${esc(r.blurb)} · ${[...new Set(r.stops.map(s => s.display.suburb))].slice(0, 3).map(esc).join(', ')}</p></div>
+      <div class="card option c${i + 1}" data-i="${i}">
+        <div><div class="label">Drive ${i + 1}${i === 0 && many ? ' <span class="tag gold ourpick">Our pick</span>' : ''}</div><h2>${esc(r.title)}</h2><p class="sub">${esc(r.blurb)} · ${[...new Set(r.stops.map(s => s.display.suburb))].slice(0, 3).map(esc).join(', ')}</p></div>
+        <div class="minimap" id="mini${i}" aria-hidden="true"></div>
         <div class="figs">
           <div class="fig"><div class="v">${r.count}</div><div class="s">Displays</div></div>
           <div class="fig"><div class="v">${fmtDur(r.totalMin)}</div><div class="s">All up</div></div>
@@ -549,15 +571,31 @@ function renderResults(v) {
       </div>`).join('')}`;
   $('#backForm', v).onclick = () => { P.step = 'form'; renderPlan(); };
   wireBeforeYouGo(v);
-  const map = state.maps.plan = makeMap($('#planMap', v));
-  fitTo(map, [P.start, ...P.routes.flatMap(r => r.stops.map(s => s.display))]);
-  drawLines();
-  $$('.option', v).forEach(c => c.addEventListener('click', e => {
-    const i = +c.dataset.i;
-    if (e.target.closest('[data-choose]')) { P.chosen = i; P.step = 'route'; renderPlan(); scrollTop(); return; }
-    P.chosen = i; $$('.option', v).forEach(o => o.setAttribute('aria-current', o === c)); drawLines();
-    $('#planMap', v).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }));
+  state.maps.mini = P.routes.map((r, i) => {
+    const m = makeMap($(`#mini${i}`, v), { still: true });
+    m.attributionControl.setPrefix(false);
+    return m;
+  });
+  drawMinis();
+  // Tapping anywhere on a drive's card chooses it (as well as its button)
+  $$('.option', v).forEach(c => c.addEventListener('click', () => { P.chosen = +c.dataset.i; P.step = 'route'; renderPlan(); scrollTop(); }));
+}
+
+// Each drive's small picture: its route and stops (the road lines arrive a moment later)
+function drawMinis() {
+  const P = state.plan;
+  (state.maps.mini || []).forEach((m, i) => {
+    const r = P.routes[i]; if (!r || !m._container?.isConnected) return;
+    if (m._route) m._route.remove();
+    const g = m._route = L.layerGroup().addTo(m);
+    const pts = [...routePoints(r), ...(P.back ? [P.start] : [])].map(p => [p.lat, p.lng]);
+    const line = P.lines[i] || pts;
+    L.polyline(line, { color: '#111', weight: 7, opacity: 0.45 }).addTo(g);
+    L.polyline(line, { color: ROUTE_COLOURS[i], weight: 4.5, dashArray: P.lines[i] ? null : '6 6' }).addTo(g);
+    r.stops.forEach(s => L.circleMarker([s.display.lat, s.display.lng], { radius: 5, color: '#fff', weight: 2, fillColor: '#c62828', fillOpacity: 1 }).addTo(g));
+    L.circleMarker([P.start.lat, P.start.lng], { radius: 6, color: '#fff', weight: 2, fillColor: '#145B35', fillOpacity: 1 }).addTo(g);
+    if (!m._fitted) { fitTo(m, pts.map(([lat, lng]) => ({ lat, lng }))); m._fitted = true; }
+  });
 }
 
 function renderRoute(v) {
@@ -574,7 +612,8 @@ function renderRoute(v) {
     ${beforeYouGo(r)}
     <button class="btn go wide" type="button" id="startDrive">${ICON.nav}Start the drive</button>
     <p class="note">The app talks you through each turn and tells you when you've arrived. Your phone will ask to share your location: tap Allow.</p>
-    <div class="map" id="planMap"></div>
+    <div class="mapwrap"><div class="map" id="planMap"></div>
+      <button class="btn openmap" type="button" id="openMap">⤢ Tap to open the full map</button></div>
     <ol class="stops">
       <li class="stopr"><span class="num" style="background:var(--pine)">S</span><div><b>${esc(P.start.title)}</b><small>Leave ${leaveWords()}</small></div><span class="t">${clock(0)}</span></li>
       ${r.stops.map((s, k) => `<li class="stopr"><span class="num">${k + 1}</span>
@@ -591,10 +630,32 @@ function renderRoute(v) {
   $('#backRes', v).onclick = () => { P.step = 'results'; renderPlan(); };
   wireBeforeYouGo(v);
   $('#startDrive', v).onclick = startDrive;
-  const map = state.maps.plan = makeMap($('#planMap', v));
+  const map = state.maps.plan = makeMap($('#planMap', v), { still: true });
   fitTo(map, routePoints(r));
   drawLines();
+  $('#openMap', v).onclick = openFullMap;
+  $('#planMap', v).addEventListener('click', openFullMap);
 }
+
+// The whole drive on a full-screen map you can move and zoom, with a big Close button
+function openFullMap() {
+  const P = state.plan, r = P.routes[P.chosen];
+  closeFullMap();
+  const o = document.createElement('div');
+  o.id = 'fullMap'; o.className = 'fullmap'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true');
+  o.innerHTML = `<div class="fullmap-head"><b>${esc(r.title)}</b><button class="btn" type="button" id="closeMap">Close ✕</button></div><div class="fullmap-map" id="fullMapMap"></div>`;
+  document.body.append(o);
+  $('#closeMap', o).onclick = closeFullMap;
+  const map = makeMap($('#fullMapMap', o));
+  const pts = [...routePoints(r), ...(P.back ? [P.start] : [])];
+  const line = P.lines[P.chosen] || pts.map(p => [p.lat, p.lng]);
+  L.polyline(line, { color: '#111', weight: 9, opacity: 0.55 }).addTo(map);
+  L.polyline(line, { color: ROUTE_COLOURS[P.chosen], weight: 6, dashArray: P.lines[P.chosen] ? null : '8 8' }).addTo(map);
+  r.stops.forEach((s, k) => L.marker([s.display.lat, s.display.lng], { icon: pinIcon('stop', 30, k + 1), zIndexOffset: 500 }).addTo(map));
+  L.marker([P.start.lat, P.start.lng], { icon: pinIcon('start', 36, 'Start'), zIndexOffset: 1000 }).addTo(map);
+  fitTo(map, pts);
+}
+function closeFullMap() { const o = $('#fullMap'); if (o) o.remove(); }
 
 /* ---------- the drive: the app guides you turn by turn ---------- */
 const ARROWS = {
@@ -918,7 +979,7 @@ function renderMapTab() {
     <p class="note">${state.displays.length} ${state.displays.length === 1 ? 'Display' : 'Displays'}. Bigger dots are bigger displays.${seenCount() ? ` Green ticks are ones you've seen.` : ''}</p>
     ${state.displays.length ? `<button class="btn wide" type="button" id="nearBtn">${ICON.locate}Near me now</button>` : ''}
     <div class="map tall" id="allMap"></div>
-    ${state.displays.length > 1 ? '<p class="note scrollhint">Scroll down for the list of every display ↓</p>' : ''}
+    ${state.displays.length > 1 ? `<p class="note scrollhint">${touchScreen() ? 'Two fingers move the map. ' : ''}Scroll down for the list of every display ↓</p>` : ''}
     <div id="sheet"></div>
     ${state.displays.length ? '' : `<div class="card"><h2>The ${new Date().getFullYear()} lights are coming!</h2>
       <p class="note" style="margin:0">No displays on the map yet. Got lights up? Add them so everyone can find you.</p>
@@ -933,12 +994,12 @@ function renderMapTab() {
       <button class="btn go wide" type="button" id="printList">${ICON.printer}Print or save the list</button></div>` : ''}`;
   const pl = $('#printList', v);
   if (pl) pl.onclick = () => printList(pl);
-  const map = state.maps.all = makeMap($('#allMap', v));
+  const map = state.maps.all = makeMap($('#allMap', v), { twoFinger: true });
   const markers = new Map();
   const spots = spreadPositions(shown);
   for (const d of shown) {
     const m = L.marker(spots.get(d.id) || [d.lat, d.lng], { icon: lightIcon(d), keyboard: false }).addTo(map);
-    m.on('click', () => showSheet(d));
+    m.on('click', () => showSheet(d, true));
     markers.set(d.id, m);
   }
   // Every suburb: at least a whole-of-Toowoomba view, so new visitors see there's more than one street.
@@ -958,7 +1019,7 @@ function renderMapTab() {
     const d = state.displays.find(x => x.id === state.mapFocus); state.mapFocus = null;
     if (d) { map.setView([d.lat, d.lng], 16); showSheet(d); }
   }
-  function showSheet(d) {
+  function showSheet(d, bringIntoView = false) {
     const s = $('#sheet', v);
     const seenBtn = () => (seen.has(d.id) ? `${ICON.tick}Seen it` : `${ICON.tick}Tick it off: I've seen it`);
     s.innerHTML = `<div class="card sheet${d.thumb ? ' haspic' : ''}">
@@ -980,6 +1041,8 @@ function renderMapTab() {
       $('#dispList', v).innerHTML = listHTML(shown);
       if (yes) toast(`Ticked: ${seenCount()} of ${state.displays.length} seen`);
     };
+    // Tapped a dot: bring the display's card into view (it sits under the map, often below the screen)
+    if (bringIntoView) setTimeout(() => s.firstElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60);
     // The small preview shows at once; the full photo replaces it when it arrives
     if (d.thumb && state.store) state.store.getPhoto(d.id).then(img => { const el = $('#sheetPic', s); if (img && el) el.src = img; });
   }
@@ -1632,7 +1695,7 @@ function fitNumbers(root = document) {
 new MutationObserver(() => requestAnimationFrame(() => fitNumbers())).observe(document.querySelector('main'), { childList: true, subtree: true });
 
 function show(tab, { keepScroll = false } = {}) {
-  closePopup();
+  closePopup(); closeFullMap();
   if (tab !== 'admin') state.adminEditing = false;
   if (tab !== 'map') state.near = null;
   if (!['plan', 'map', 'add', 'admin'].includes(tab)) tab = 'plan';

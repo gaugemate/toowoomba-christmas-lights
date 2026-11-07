@@ -355,3 +355,24 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 
 .scrollhint{margin:-4px 0 0;text-align:center;font-weight:600}
 .printcard{margin-top:14px}
+
+/* ---------- Maps that don't trap your finger ---------- */
+.nextstep{flex-direction:row;align-items:center;gap:12px;padding:14px 16px;background:var(--green-light);box-shadow:none}
+.nextstep span{font-size:1.6rem;flex:none}
+.nextstep p{margin:0;font-weight:600;color:var(--ink)}
+.ourpick{min-height:24px;font-size:.8rem;padding:2px 10px;margin-left:6px;vertical-align:middle}
+.minimap{height:130px;border-radius:12px;overflow:hidden;background:#dfe7e3;cursor:pointer}
+.minimap .leaflet-control-attribution{font-size:8px;line-height:1.2;max-width:100%}
+.mapwrap{position:relative}
+.mapwrap .map{cursor:pointer}
+.btn.openmap{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:500;min-height:44px;padding:8px 18px;border:0;box-shadow:0 2px 10px rgba(0,0,0,.3);white-space:nowrap}
+.fullmap{position:fixed;inset:0;z-index:4000;background:var(--green-primary);display:flex;flex-direction:column}
+.fullmap-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#fff;font-size:1.15rem;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px))}
+.fullmap-head .btn{min-height:44px;flex:none}
+.fullmap-map{flex:1;min-height:0}
+.fingerhint{position:absolute;inset:0;z-index:600;background:rgba(0,0,0,.5);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  text-align:center;padding:24px;pointer-events:none;opacity:0;transition:opacity .25s}
+.fingerhint.on{opacity:1}
+.fingerhint b{font-size:1.15rem}
+.fingerhint span{font-size:.95rem}
