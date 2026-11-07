@@ -1748,7 +1748,70 @@ async function start() {
     if (taps >= 5) { taps = 0; if (location.hash === '#admin') show('admin'); else location.hash = 'admin'; }
   });
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    try { await navigator.serviceWorker.register('sw.js'); } catch (e) { /* preview pages can't use one */ }
+    try { state.swReg = await navigator.serviceWorker.register('sw.js'); } catch (e) { /* preview pages can't use one */ }
   }
+  startUpdateChecks();
+}
+
+/* ---------- Updates: phones keep home-screen apps paused in the background, so they'd keep running an old
+   version. Check for a new one whenever the app is opened again (and every 30 minutes), and switch to it by
+   itself as soon as it's safe: never during a drive, a form, a popup, or while looking at a planned drive. */
+let runningVersion = null, newVersion = null;
+async function latestVersion() {
+  try {
+    const r = await fetch(`sw.js?check=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    return ((await r.text()).match(/const VERSION = '([^']+)'/) || [])[1] || null;
+  } catch (e) { return null; } // no signal: try again later
+}
+function safeToUpdate() {
+  const P = state.plan;
+  if (P.drive || ['results', 'route', 'drive'].includes(P.step)) return false;
+  if ($('#popup') || $('#arrival')) return false;
+  if (state.adminEditing || state.add.editing) return false;
+  const f = state.tab === 'add' ? $('#view-add #addForm') : null;
+  if (f) { // filling in Add my lights: only if nothing's been entered yet
+    if ($('.picked', f) || $('#notes', f)?.value || $$('[aria-checked="true"], [aria-pressed="true"]', f).some(b => !b.matches('[data-view="drive"]'))) return false;
+  }
+  return true;
+}
+const session = {
+  get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+};
+function applyUpdate() {
+  if (!newVersion || !safeToUpdate()) return;
+  if (session.get('tcl.updatedTo') === newVersion) return; // already reloaded for this one
+  session.set('tcl.updatedTo', newVersion);
+  const P = state.plan; // keep what they'd chosen on the Plan page
+  session.set('tcl.resume', JSON.stringify({ start: P.start, suburbs: [...P.suburbs], minutes: P.minutes, back: P.back, leave: P.leave }));
+  location.reload();
+}
+async function checkForUpdate() {
+  const v = await latestVersion();
+  if (!v) return;
+  if (!runningVersion) { runningVersion = v; return; }
+  if (v !== runningVersion) {
+    newVersion = v;
+    try { if (state.swReg) state.swReg.update(); } catch (e) { /* fine */ }
+    applyUpdate();
+  }
+}
+function startUpdateChecks() {
+  // Coming back after an update: put the Plan page back how it was
+  try {
+    const saved = JSON.parse(session.get('tcl.resume') || 'null');
+    session.set('tcl.resume', '');
+    if (saved && state.plan.step === 'form') {
+      const P = state.plan;
+      Object.assign(P, { start: saved.start, minutes: saved.minutes || P.minutes, back: saved.back !== false, leave: saved.leave ?? null });
+      P.suburbs = new Set(saved.suburbs || []);
+      if (state.tab === 'plan') renderPlan();
+    }
+  } catch (e) { /* nothing saved */ }
+  checkForUpdate();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+  setInterval(checkForUpdate, 30 * 60000);
+  setInterval(applyUpdate, 5000); // waiting for a safe moment (e.g. the end of a drive)
 }
 start();
