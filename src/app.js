@@ -1616,6 +1616,7 @@ async function loadDisplays() {
 function appHeight() {
   let h = window.innerHeight;
   if (navigator.standalone === true) h = Math.max(h, document.documentElement.clientHeight);
+  return h;
 }
 function sizeApp() { document.documentElement.style.setProperty('--app-h', appHeight() + 'px'); }
 
