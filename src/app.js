@@ -854,18 +854,16 @@ function advance() {
 // time we'd get there? Then skip it, say why, and go to the next one.
 async function headToNext(say, render = true) {
   const P = state.plan, D = P.drive; if (!D) return;
-  D.loading = true; // hold the directions until we've checked
-  if (render) { renderPlan(); scrollTop(); }
+  D.loading = false;
+  // Stops that will be dark by the time we get there are skipped straight away (worked out on the phone, no waiting)
   for (;;) {
     const t = driveTarget();
     if (!t || t.kind === 'home') break;
     const prev = P.driveAt > 0 ? P.routes[P.chosen].stops[P.driveAt - 1].display : P.start;
-    const why = await whySkip(t.d, D.pos || [prev.lat, prev.lng]);
-    if (state.plan.drive !== D) return; // the drive ended meanwhile
+    const why = closedBy(t.d, D.pos || [prev.lat, prev.lng]);
     if (!why) break;
     say += why + ' '; D.skipped++; P.driveAt++; toast(why);
   }
-  D.loading = false;
   const t = driveTarget();
   if (!t) { speak(say); return endDriveDone(); }
   let extra = '';
@@ -875,22 +873,35 @@ async function headToNext(say, render = true) {
   }
   speak(say + (t.kind === 'home' ? 'Heading back to the start.' : `Heading to stop ${P.driveAt + 1}, ${t.d.address}.${extra}`));
   if (P.step === 'drive') renderPlan();
-  if (D.pos) loadLeg();
+  if (render) scrollTop();
+  if (D.pos) loadLeg(); // directions straight away
+  if (t.kind !== 'stop') return;
+  // Meanwhile, check with the database that it's still on (switched off tonight, or taken off the map).
+  // If not, skip it and say why; if there's no signal, carry on with what we know.
+  const at = P.driveAt, why = await stillOn(t.d);
+  if (!why || state.plan.drive !== D || P.driveAt !== at || D.arrived) return;
+  D.skipped++; P.driveAt++; toast(why);
+  Object.assign(D, { guide: null, line: null, arrived: false, noRoute: false, loading: false });
+  headToNext(why + ' ');
 }
 
-async function whySkip(d, from) {
+// Off by the time we'd get there (from its hours and a rough drive time)
+function closedBy(d, from) {
+  const h = parseHours(d.hours), now = new Date(), c = now.getHours() * 60 + now.getMinutes();
+  if (!h || daytime(c)) return '';
+  const eta = (metres(from, [d.lat, d.lng]) * 1.4 / 1000 / 32) * 60 * CONFIG.slowDriving + 1; // minutes, roughly
+  return nightMinutes(c) + eta > h.off - LAST_CALL ? `${d.address} switches its lights off at ${clockText(h.off)}, so we'll skip it.` : '';
+}
+
+// Still on tonight, according to the database? ('' = yes, or we couldn't check)
+async function stillOn(d) {
   const S = state.store;
   let fresh;
-  try { fresh = S && S.getDisplay ? await Promise.race([S.getDisplay(d.id), new Promise(r => setTimeout(() => r(undefined), 4000))]) : undefined; }
+  try { fresh = S && S.getDisplay ? await Promise.race([S.getDisplay(d.id), new Promise(r => setTimeout(() => r(undefined), 8000))]) : undefined; }
   catch (e) { fresh = undefined; } // no signal: go on what we know
   if (fresh === null) return `${d.address} isn't on the map any more, so we'll skip it.`;
-  const x = fresh || d;
-  if (offTonight(x)) return `${d.address} has switched its lights off tonight, so we'll skip it.`;
-  const h = parseHours(x.hours), now = new Date(), c = now.getHours() * 60 + now.getMinutes();
-  if (h && !daytime(c)) {
-    const eta = (metres(from, [d.lat, d.lng]) * 1.4 / 1000 / 32) * 60 * CONFIG.slowDriving + 1; // minutes, roughly
-    if (nightMinutes(c) + eta > h.off - LAST_CALL) return `${d.address} switches its lights off at ${clockText(h.off)}, so we'll skip it.`;
-  }
+  if (fresh && offTonight(fresh)) return `${d.address} has switched its lights off tonight, so we'll skip it.`;
+  if (fresh && parseHours(fresh.hours)?.off !== parseHours(d.hours)?.off) { const why = closedBy(fresh, state.plan.drive?.pos || [d.lat, d.lng]); if (why) return why; }
   return '';
 }
 
