@@ -5,6 +5,7 @@ import * as svc from './services.js';
 import { searchGnaf, nearestAddress } from './gnaf.js';
 import { openStore, cleanEntry, newSeasonYear, THUMB_MAX, PHOTO_MAX, offTonight } from './store.js';
 import { Guide, fmtDist, metres, bearingWords } from './guide.js';
+import { APP_VERSION } from './version.js';
 
 const L = window.L;
 const $ = (s, el = document) => el.querySelector(s);
@@ -1860,7 +1861,10 @@ async function start() {
 /* ---------- Updates: phones keep home-screen apps paused in the background, so they'd keep running an old
    version. Check for a new one whenever the app is opened again (and every 30 minutes), and switch to it by
    itself as soon as it's safe: never during a drive, a form, a popup, or while looking at a planned drive. */
-let runningVersion = null, newVersion = null;
+// The version actually running (from the files this page loaded), so a slow start that fell back to the
+// phone's saved copy is still noticed and updated
+const runningVersion = APP_VERSION;
+let newVersion = null;
 async function latestVersion() {
   try {
     const r = await fetch(`sw.js?check=${Date.now()}`, { cache: 'no-store' });
@@ -1894,7 +1898,6 @@ function applyUpdate() {
 async function checkForUpdate() {
   const v = await latestVersion();
   if (!v) return;
-  if (!runningVersion) { runningVersion = v; return; }
   if (v !== runningVersion) {
     newVersion = v;
     try { if (state.swReg) state.swReg.update(); } catch (e) { /* fine */ }
