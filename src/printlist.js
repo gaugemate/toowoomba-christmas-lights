@@ -26,8 +26,8 @@ async function loadLogo() {
 }
 
 // The PDF's built-in font only has Western European letters: drop emoji and the like rather than print rubbish
-const plain = s => String(s ?? '').replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
-  .replace(/[^\x20-\x7E -ÿ–—•…]/g, '').replace(/\s+/g, ' ').trim();
+const plain = s => String(s ?? '').replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"')
+  .replace(/[^\x20-\x7E\u00A0-\u00FF\u2013\u2014\u2022\u2026]/g, '').replace(/\s+/g, ' ').trim();
 const hoursText = h => { const p = parseHours(h); return p ? `${clockText(p.on)} to ${clockText(p.off)}` : plain(h); };
 
 function star(doc, cx, cy, r) {

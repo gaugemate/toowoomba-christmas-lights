@@ -896,7 +896,7 @@ async function whySkip(d, from) {
 
 const sawText = () => { const P = state.plan, k = P.routes[P.chosen].count - (P.drive?.skipped || 0); return k === 1 ? '1 display' : `${k} displays`; };
 function endDriveDone() {
-  const P = state.plan, r = P.routes[P.chosen], saw = sawText();
+  const P = state.plan, saw = sawText();
   if (P.drive && P.drive.watch != null) navigator.geolocation.clearWatch(P.drive.watch);
   keepAwake(false); closeArrival();
   P.drive = null; P.step = 'drive-done';

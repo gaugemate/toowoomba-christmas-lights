@@ -3,7 +3,7 @@
 // - Map pictures: saved as they're viewed (up to MAX_TILES) so maps you've looked at still show offline.
 // - Address search, road times and the database are never saved here; the app has its own fallbacks for those.
 // Bump VERSION when the list of APP_FILES changes.
-const VERSION = 'v43';
+const VERSION = 'v44';
 const APP_CACHE = `tcl-app-${VERSION}`;
 const TILE_CACHE = 'tcl-tiles';
 const LIB_CACHE = 'tcl-libs'; // the database code from Google: each version never changes, so keep it
@@ -13,11 +13,11 @@ const APP_FILES = [
   './',
   'index.html',
   'manifest.webmanifest',
-  'src/app.js', 'src/config.js', 'src/guide.js', 'src/planner.js', 'src/sample-displays.js',
+  'src/app.js', 'src/config.js', 'src/gnaf.js', 'src/guide.js', 'src/planner.js', 'src/printlist.js', 'src/sample-displays.js',
   'src/services.js', 'src/store.js', 'src/styles.css',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css',
   'fonts/InterVariable.woff2',
-  'icons/logo-460.webp', 'icons/logo-690.webp',
+  'icons/logo-460.webp', 'icons/logo-690.webp', 'icons/logo-print.jpg',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon-180.png'
 ];
 
