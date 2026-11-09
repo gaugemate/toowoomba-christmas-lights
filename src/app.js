@@ -978,8 +978,9 @@ function renderMapTab() {
     <h1>All the lights</h1>
     <p class="note">${state.displays.length} ${state.displays.length === 1 ? 'Display' : 'Displays'}. Bigger dots are bigger displays.${seenCount() ? ` Green ticks are ones you've seen.` : ''}</p>
     ${state.displays.length ? `<button class="btn wide" type="button" id="nearBtn">${ICON.locate}Near me now</button>` : ''}
-    <div class="map tall" id="allMap"></div>
-    ${state.displays.length > 1 ? `<p class="note scrollhint">${touchScreen() ? 'Two fingers move the map. ' : ''}Scroll down for the list of every display ↓</p>` : ''}
+    <div class="mapwrap"><div class="map tall" id="allMap"></div>
+      ${state.displays.length ? '<button class="btn fullbtn" type="button" id="fullView">⤢ See full view</button>' : ''}</div>
+    ${state.displays.length > 1 ? `<div class="morehint" aria-hidden="true">More below<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>` : ''}
     <div id="sheet"></div>
     ${state.displays.length ? '' : `<div class="card"><h2>The ${new Date().getFullYear()} lights are coming!</h2>
       <p class="note" style="margin:0">No displays on the map yet. Got lights up? Add them so everyone can find you.</p>
@@ -1007,6 +1008,8 @@ function renderMapTab() {
   if (shown.length) fitTo(map, shown, filter ? SUBURB_ZOOM : TOWN_ZOOM);
   else map.setView(CONFIG.center, TOWN_ZOOM);
   $('#subFilter', v).onchange = e => { state.mapFilter = e.target.value; renderMapTab(); };
+  const fv = $('#fullView', v);
+  if (fv) fv.onclick = openAllFull;
   const nb = $('#nearBtn', v);
   if (nb) nb.onclick = () => { state.near = { hideSeen: false }; renderMapTab(); scrollTop(); };
   $('#dispList', v).onclick = e => {
@@ -1019,8 +1022,8 @@ function renderMapTab() {
     const d = state.displays.find(x => x.id === state.mapFocus); state.mapFocus = null;
     if (d) { map.setView([d.lat, d.lng], 16); showSheet(d); }
   }
-  function showSheet(d, bringIntoView = false) {
-    const s = $('#sheet', v);
+  function showSheet(d, bringIntoView = false, host = null, onSeen = null) {
+    const s = host || $('#sheet', v);
     const seenBtn = () => (seen.has(d.id) ? `${ICON.tick}Seen it` : `${ICON.tick}Tick it off: I've seen it`);
     s.innerHTML = `<div class="card sheet${d.thumb ? ' haspic' : ''}">
       ${d.thumb ? `<img class="dphoto" id="sheetPic" src="${esc(d.thumb)}" alt="Photo of the lights at ${esc(d.address)}">` : ''}
@@ -1039,12 +1042,39 @@ function renderMapTab() {
       e.currentTarget.setAttribute('aria-pressed', yes); e.currentTarget.innerHTML = seenBtn();
       const m = markers.get(d.id); if (m) m.setIcon(lightIcon(d));
       $('#dispList', v).innerHTML = listHTML(shown);
+      if (onSeen) onSeen(d);
       if (yes) toast(`Ticked: ${seenCount()} of ${state.displays.length} seen`);
     };
     // Tapped a dot: bring the display's card into view (it sits under the map, often below the screen)
     if (bringIntoView) setTimeout(() => s.firstElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60);
     // The small preview shows at once; the full photo replaces it when it arrives
     if (d.thumb && state.store) state.store.getPhoto(d.id).then(img => { const el = $('#sheetPic', s); if (img && el) el.src = img; });
+  }
+
+  // "See full view": the map on the whole screen (one finger moves it); tap a dot for its card; Close goes back
+  function openAllFull() {
+    closeFullMap();
+    const o = document.createElement('div');
+    o.id = 'fullMap'; o.className = 'fullmap'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true');
+    o.innerHTML = `<div class="fullmap-head"><b>All the lights</b><button class="btn" type="button" id="closeMap">Close ✕</button></div>
+      <div class="fullmap-map" id="fullMapMap"></div>
+      <div class="fulltip" id="fullTip">Tap a dot to see the display. <b>Close</b> to go back to the list.</div>
+      <div class="fullsheet" id="fullSheet"></div>`;
+    document.body.append(o);
+    $('#closeMap', o).onclick = closeFullMap;
+    const fm = makeMap($('#fullMapMap', o));
+    const fmarkers = new Map();
+    for (const d of shown) {
+      const m = L.marker(spots.get(d.id) || [d.lat, d.lng], { icon: lightIcon(d), keyboard: false }).addTo(fm);
+      m.on('click', () => {
+        $('#fullTip', o)?.remove();
+        showSheet(d, false, $('#fullSheet', o), x => { const k = fmarkers.get(x.id); if (k) k.setIcon(lightIcon(x)); });
+      });
+      fmarkers.set(d.id, m);
+    }
+    if (shown.length) fitTo(fm, shown, filter ? SUBURB_ZOOM : 13);
+    else fm.setView(CONFIG.center, TOWN_ZOOM);
+    setTimeout(() => $('#fullTip', o)?.classList.add('gone'), 4500);
   }
 }
 

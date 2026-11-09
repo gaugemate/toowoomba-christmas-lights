@@ -159,7 +159,7 @@ input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-sea
 
 /* Maps */
 .map{height:min(44vh,380px);border-radius:14px;overflow:hidden;background:#dfe7e3;border:0;z-index:0}
-.map.tall{height:min(40vh,360px)} /* short enough that the list below peeks out, so people know to scroll */
+.map.tall{height:clamp(190px,calc(var(--app-h,100vh) - 430px),430px)} /* sized to the screen, so More below and the Every suburb box always peek out */
 .map.small{height:220px;border:2px solid var(--edge)}
 .leaflet-container{font-family:var(--f-body);background:#dfe7e3}
 .leaflet-control-attribution{font-size:10px}
@@ -376,3 +376,17 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .fingerhint.on{opacity:1}
 .fingerhint b{font-size:1.15rem}
 .fingerhint span{font-size:.95rem}
+
+/* All lights: slimmer Near me now, See full view, More below */
+#nearBtn{min-height:40px;padding:4px 14px;font-size:16px}
+#nearBtn svg{width:20px;height:20px}
+.btn.fullbtn{position:absolute;left:10px;top:10px;z-index:500;min-height:38px;padding:6px 14px;font-size:15px;border:0;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.morehint{display:flex;flex-direction:column;align-items:center;color:#fff;font-weight:600;font-size:15px;margin:-4px 0 -8px}
+.morehint svg{width:30px;height:30px;animation:bob 1.4s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(5px)}}
+.fulltip{position:absolute;left:12px;right:12px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:600;background:#fff;color:var(--ink);border-radius:16px;
+  padding:12px 14px;box-shadow:0 4px 16px rgba(0,0,0,.35);font-size:15px;transition:opacity .5s}
+.fulltip.gone{opacity:0;pointer-events:none}
+.fullsheet{position:absolute;left:10px;right:10px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:700;max-height:62%;overflow:auto;border-radius:20px}
+.fullsheet .card{margin:0}
+@media (prefers-reduced-motion:reduce){.morehint svg{animation:none}}
