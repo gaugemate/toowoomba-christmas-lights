@@ -1639,11 +1639,14 @@ async function renderAdmin() {
   if (ny) ny.onclick = () => newYearSteps(S, pending.length);
   $('#copyLink', v).onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch (e) { $('#addLink', v).select(); toast('Select the link and copy it'); } };
   $('#refreshAdmin', v).onclick = async () => {
-    const b = $('#refreshAdmin', v); b.disabled = true; b.textContent = 'Refreshing…';
+    // A spinning wheel while it fetches the latest displays (and checks for a newer version of the app);
+    // it stays for at least a moment so it's easy to see, and goes when the page is redrawn
+    const b = $('#refreshAdmin', v); b.disabled = true; b.innerHTML = '<span class="spinner" aria-hidden="true"></span>Refreshing…';
+    const atLeast = new Promise(r => setTimeout(r, 700));
     stopPendingWatch(); state.pendingError = null;
-    await loadDisplays();
+    await Promise.all([loadDisplays(), checkForUpdate(), atLeast]);
     startPendingWatch();
-    renderAdmin();
+    await renderAdmin();
   };
   const adminEdit = d => {
     state.adminEditing = true;

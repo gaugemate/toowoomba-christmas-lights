@@ -410,3 +410,8 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .chips.twocol .chip[data-sub=""]{grid-column:1 / -1;justify-self:center;width:calc(50% - 5px)}
 .chips.twocol .chip.lone{grid-column:1 / -1;justify-self:center;width:calc(50% - 5px)}
 .chips.more.open.twocol .chip.extra{display:inline-flex}
+/* Admin: the spinning wheel on Refresh */
+.spinner{display:inline-block;width:18px;height:18px;border-radius:50%;border:3px solid rgba(20,91,53,.25);border-top-color:var(--green-primary);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+#refreshAdmin:disabled{opacity:1}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
