@@ -980,6 +980,31 @@ async function keepAwake(on) {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state.plan.drive) keepAwake(true); });
 
 /* =================================================================== ALL LIGHTS */
+// What the dots mean, with tonight's numbers. Before any display has started for the season, every dot is red
+// (so people can see what's coming), and the key says so instead.
+function mapKey() {
+  const all = state.displays; if (!all.length) return '';
+  if (preSeason()) {
+    const first = all.map(d => d.from).filter(Boolean).sort()[0];
+    return `<div class="mapkey"><div class="kbox"><span class="kdot on"></span><span class="ktext"><span>${all.length}</span><span>${all.length === 1 ? 'display' : 'displays'}${first ? ` · from ${esc(longDate(first))}` : ''}</span></span></div></div>`;
+  }
+  const on = all.filter(d => onTonight(d)).length, off = all.length - on;
+  return `<div class="mapkey" role="note" aria-label="${on} displays on tonight, ${off} off tonight">
+    <div class="kbox"><span class="kdot on"></span><span class="ktext"><span>${on}</span><span>On Tonight</span></span></div>
+    <div class="kbox"><span class="kdot off"></span><span class="ktext"><span>${off}</span><span>Off Tonight</span></span></div></div>`;
+}
+// "2026-12-01" -> "1 December"
+const longDate = iso => { const [y, m, d] = String(iso).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-AU', { day: 'numeric', month: 'long' }); };
+// Why a display is off tonight, in the owner's own terms ('' if it's on)
+function whyOff(d) {
+  if (offTonight(d)) return 'Switched off tonight by the owner (bad weather, or a problem with the lights).';
+  if (preSeason() || litTonight(d)) return '';
+  const t = isoDay(new Date());
+  if (d.from && d.from > t) return `Lights on from ${longDate(d.from)}.`;
+  if (d.until && d.until < t) return 'Finished for this year.';
+  return '';
+}
+
 function renderMapTab() {
   const v = $('#view-map');
   if (state.near) return renderNearMe(v);
@@ -988,7 +1013,7 @@ function renderMapTab() {
   const shown = state.displays.filter(d => !filter || d.suburb === filter);
   v.innerHTML = `
     <h1>All the lights</h1>
-    <p class="note">${state.displays.length} ${state.displays.length === 1 ? 'Display' : 'Displays'}. Bigger dots are bigger displays.${seenCount() ? ` Green ticks are ones you've seen.` : ''}</p>
+    ${mapKey()}
     ${state.displays.length ? `<button class="btn wide" type="button" id="nearBtn">${ICON.locate}Near me now</button>` : ''}
     <div class="mapwrap"><div class="map tall" id="allMap"></div>
       ${state.displays.length ? '<button class="btn fullbtn" type="button" id="fullView">⤢ See full view</button>' : ''}</div>
@@ -1044,8 +1069,8 @@ function renderMapTab() {
       <div class="sz" style="display:flex;gap:8px;flex-wrap:wrap"><span class="tag gold">${stars(d.size)} ${sizeName(d.size)}</span>
         ${d.viewing === 'walk' ? '<span class="tag">Park and walk</span>' : ''}${(d.features || []).map(f => `<span class="tag">${esc(FEATURES[f] || f)}</span>`).join('')}</div>
       ${d.notes ? `<p style="margin:0">${esc(d.notes)}</p>` : ''}
-      ${offTonight(d) ? '<p class="pinwarn" style="margin:0"><b>Switched off tonight</b> by the owner (bad weather, or a problem with the lights). Back on tomorrow.</p>' : ''}
-      <p class="note">${d.hours ? `Lights on ${esc(d.hours)}` : ''}${!litTonight(d) && !preSeason() ? ' · not on tonight' : ''}</p>
+      ${whyOff(d) ? `<p class="offline-why"><span class="kdot off"></span><span><b>Off tonight.</b> ${esc(whyOff(d))}</span></p>` : ''}
+      ${d.hours ? `<p class="note">Lights on ${esc(d.hours)}</p>` : ''}
       <a class="btn go wide" href="${svc.navigateUrl(d)}" target="_blank" rel="noopener">${ICON.nav}Directions</a>
       <button class="btn wide seenbtn" type="button" id="seenBtn" aria-pressed="${seen.has(d.id)}">${seenBtn()}</button></div>`;
     $('.x', s).onclick = () => { s.innerHTML = ''; };
@@ -1728,10 +1753,14 @@ function scrollTop() { $('#scroller').scrollTo({ top: 0 }); }
 
 // Big numbers shrink to fit their box, never wrap or spill (same rule as GaugeMate)
 function fitNumbers(root = document) {
-  for (const el of $$('.fig .v, .bigtime', root)) {
+  for (const el of $$('.fig .v, .bigtime, .mapkey .kbox', root)) {
     el.style.fontSize = '';
     let size = parseFloat(getComputedStyle(el).fontSize), guard = 0;
-    while (el.scrollWidth > el.clientWidth + 1 && size > 12 && guard++ < 40) { size -= 1; el.style.fontSize = size + 'px'; }
+    // The key boxes centre their contents, so measure the contents themselves (dot + gap + words) against the room inside
+    const tooWide = el.classList.contains('kbox')
+      ? () => { const t = el.querySelector('.ktext'), cs = getComputedStyle(el); return t.scrollWidth + 30 > el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); }
+      : () => el.scrollWidth > el.clientWidth + 1;
+    while (tooWide() && size > 11 && guard++ < 40) { size -= 0.5; el.style.fontSize = size + 'px'; }
   }
 }
 new MutationObserver(() => requestAnimationFrame(() => fitNumbers())).observe(document.querySelector('main'), { childList: true, subtree: true });
