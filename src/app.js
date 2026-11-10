@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN, radioStation, parseHours, clockText, clockMinutes, nightMinutes, LAST_CALL } from './planner.js';
 import * as svc from './services.js';
 import { searchGnaf, nearestAddress } from './gnaf.js';
-import { openStore, cleanEntry, newSeasonYear, THUMB_MAX, PHOTO_MAX, offTonight } from './store.js';
+import { openStore, cleanEntry, newSeasonYear, THUMB_MAX, PHOTO_MAX, offTonight, normLink, linkShort, LINK_TITLE_MAX } from './store.js';
 import { Guide, fmtDist, metres, bearingWords } from './guide.js';
 import { APP_VERSION } from './version.js';
 
@@ -28,7 +28,8 @@ const ICON = {
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
   tick: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
   camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.6"/></svg>',
-  picture: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>'
+  picture: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
 };
 // A white card with a round icon and a heading (the spec's content card)
 const cardHead = (icon, title, extra = '') => `<div class="card-heading"><span class="card-icon">${icon}</span><h2>${title}</h2>${extra}</div>`;
@@ -1077,6 +1078,7 @@ function renderMapTab() {
       <div><b style="font-size:1.25rem;display:block;padding-right:50px">${esc(d.address)}</b><span class="muted" style="font-weight:600">${esc(d.suburb)}</span></div>
       <div class="sz" style="display:flex;gap:8px;flex-wrap:wrap"><span class="tag gold">${stars(d.size)} ${sizeName(d.size)}</span>
         ${d.viewing === 'walk' ? '<span class="tag">Park and walk</span>' : ''}${(d.features || []).map(f => `<span class="tag">${esc(FEATURES[f] || f)}</span>`).join('')}</div>
+      ${linkButton(d)}
       ${d.notes ? `<p style="margin:0">${esc(d.notes)}</p>` : ''}
       ${whyOff(d) ? `<p class="offline-why"><span class="kdot off"></span><span><b>Off tonight.</b> ${esc(whyOff(d))}</span></p>` : ''}
       ${d.hours ? `<p class="note">Lights on ${esc(d.hours)}</p>` : ''}
@@ -1216,6 +1218,14 @@ function listHTML(list) {
 // Changing the address or notes of an approved display sends it back for a check (only when not an admin).
 const MAJOR = ['address', 'suburb', 'lat', 'lng', 'notes'];
 
+// The owner's website or Facebook page, as a button on their display's card (opens in a new tab)
+function linkButton(d) {
+  const href = normLink(d.link);
+  if (!href) return '';
+  return `<div class="dlink"><a class="btn wide linkout" href="${esc(href)}" target="_blank" rel="noopener nofollow ugc">${ICON.link}<span>${esc(d.linkTitle || 'Visit our website')}</span></a>
+    <small>Opens ${esc(linkShort(href))}</small></div>`;
+}
+
 // A photo from the camera or library, made small enough to send: the full photo (up to about 1000 pixels
 // across, under 350 KB) and a small preview for lists (128 × 96). Done on the phone, so nothing big is uploaded.
 async function photoFromFile(file) {
@@ -1302,6 +1312,15 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
           <div id="photoBox"></div>
           <input type="file" accept="image/*" capture="environment" id="photoCam" hidden>
           <input type="file" accept="image/*" id="photoPick" hidden>
+        </div>
+        <div class="card" id="linkCard">
+          ${cardHead(ICON.link, 'Website or Facebook page <span class="muted" style="font-weight:600;font-size:1rem">(optional)</span>')}
+          <p class="note" style="margin:0">Got a page about your display, a fundraiser or a Facebook page? Add it and people can tap through to it.</p>
+          <div class="field"><label for="linkUrl">Web address</label>
+            <input id="linkUrl" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="200" placeholder="e.g. facebook.com/yourpage" value="${esc(d.link || '')}"></div>
+          <div class="field"><label for="linkTitle">Button wording</label>
+            <input id="linkTitle" type="text" autocomplete="off" maxlength="${LINK_TITLE_MAX}" placeholder="Visit our website" value="${esc(d.linkTitle || '')}"></div>
+          <p class="note" style="margin:0">We check every link before it shows.</p>
         </div>
         <div class="card">
           <div class="field"><label for="notes">Anything people should know? <span class="muted" style="font-weight:600">(optional)</span></label>
@@ -1428,6 +1447,8 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
     const from = $('#from', v).value, until = $('#until', v).value;
     if (from && until && until < from) return err('The "Until" date is before the "From" date.', $('#until', v));
     if (nightMinutes(clockMinutes($('#hTo', v).value)) <= nightMinutes(clockMinutes($('#hFrom', v).value))) return err('"Lights off" needs to be after "Lights on".', $('#hTo', v));
+    const linkIn = $('#linkUrl', v).value.trim(), link = normLink(linkIn);
+    if (linkIn && !link) return err("That web address doesn't look right. Copy it from your browser, e.g. facebook.com/yourpage", $('#linkUrl', v));
     const btn = $('#addBtn', v); btn.disabled = true; status.className = 'status'; status.textContent = mode === 'new' ? 'Sending…' : 'Saving…';
     const entry = {
       address: F.place.title, suburb: $('#suburb', v).value.trim() || F.place.suburb, lat: F.place.lat, lng: F.place.lng,
@@ -1436,6 +1457,10 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
     };
     const photoChanged = F.photo !== undefined;
     if (photoChanged) entry.thumb = F.photo ? F.photo.thumb : '';
+    // The link: only sent when it's new or changed, so older displays aren't touched
+    const linkTitle = link ? $('#linkTitle', v).value.trim().slice(0, LINK_TITLE_MAX) : '';
+    const linkChanged = link !== normLink(d.link) || linkTitle !== (normLink(d.link) ? String(d.linkTitle || '').trim() : '');
+    if (mode === 'new' || linkChanged) { entry.link = link; entry.linkTitle = linkTitle; }
     try {
       const S = await state.storeReady;
       if (mode === 'new') {
@@ -1444,7 +1469,8 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
       }
       const before = cleanEntry(d), after = cleanEntry(entry);
       // A new photo is checked first, like a new address; taking a photo off isn't
-      const major = MAJOR.some(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])) || !!(photoChanged && F.photo);
+      // A new or changed link is checked too; taking it off isn't
+      const major = MAJOR.some(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])) || !!(photoChanged && F.photo) || !!(linkChanged && link);
       const newStatus = mode === 'admin' ? d.status : (d.status === 'approved' && !major ? 'approved' : 'pending');
       await S.update(d.id, entry, newStatus);
       let photoErr = false;
@@ -1466,7 +1492,7 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
 function displaySummary(d) {
   const bits = [`${stars(d.size)} ${sizeName(d.size)}`, d.viewing === 'walk' ? 'Park and walk' : 'Drive past', d.hours].filter(Boolean);
   const feats = (d.features || []).map(f => FEATURES[f] || f);
-  return `<p class="meta" style="margin:0">${bits.map(b => `<span style="white-space:nowrap">${esc(b)}</span>`).join(' · ')}${feats.length ? '<br>' + feats.map(esc).join(', ') : ''}${d.notes ? '<br>“' + esc(d.notes) + '”' : ''}</p>`;
+  return `<p class="meta" style="margin:0">${bits.map(b => `<span style="white-space:nowrap">${esc(b)}</span>`).join(' · ')}${feats.length ? '<br>' + feats.map(esc).join(', ') : ''}${d.notes ? '<br>“' + esc(d.notes) + '”' : ''}${normLink(d.link) ? `<br>Link: “${esc(d.linkTitle || 'Visit our website')}” → ${esc(linkShort(normLink(d.link)))}` : ''}</p>`;
 }
 
 async function renderAdd() {
@@ -1478,7 +1504,7 @@ async function renderAdd() {
       onSaved: async r => {
         A.editing = null; await loadDisplays(); renderAdd(); scrollTop();
         popup(r.backToCheck
-          ? `<h2>Changes saved</h2><p style="margin:0">You changed the address, notes or photo, so your display will be back on the map once it's been checked.</p>`
+          ? `<h2>Changes saved</h2><p style="margin:0">You changed the address, notes, photo or link, so your display will be back on the map once it's been checked.</p>`
           : `<h2>Changes saved</h2><p style="margin:0">Your display has been updated. Thanks for lighting up Toowoomba!</p>`,
           [{ id: 'ok', text: 'OK', cls: 'go' }]);
       }
@@ -1603,6 +1629,7 @@ async function renderAdmin() {
         <p class="meta">${stars(d.size)} ${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'} · ${esc(d.hours)}<br>${esc(fmtDate(d.from))} to ${esc(fmtDate(d.until))}${(d.features || []).length ? '<br>' + d.features.map(f => esc(FEATURES[f] || f)).join(', ') : ''}${d.notes ? '<br>“' + esc(d.notes) + '”' : ''}</p>
         ${(() => { const twin = [...state.displays, ...pending].find(o => o.id !== d.id && nearSameSpot(o, d));
           return twin ? `<p class="pinwarn"><b>Same map spot as ${esc(twin.address)}.</b> The dot was probably left at the middle of the street. Tap Edit and drag it onto the right house before approving.</p>` : ''; })()}
+        ${normLink(d.link) ? `<p class="pinwarn"><b>Link to check:</b> “${esc(d.linkTitle || 'Visit our website')}” → <a href="${esc(normLink(d.link))}" target="_blank" rel="noopener nofollow">${esc(linkShort(normLink(d.link)))}</a><br><span style="font-size:.9rem">Tap it to open it and check it's suitable before approving. To take it off, tap Edit and clear the web address.</span></p>` : ''}
         ${d.thumb ? `<div class="adminpic"><span class="tag gold">Photo to check</span><img class="dphoto" data-photo="${esc(d.id)}" src="${esc(d.thumb)}" alt="Photo of ${esc(d.address)}"></div>
           <button class="btn wide" type="button" data-act="nophoto">Remove the photo (keep the display)</button>` : ''}
         <a class="linkbtn" href="https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}" target="_blank" rel="noopener">Check the spot on Google Maps</a>
@@ -1920,7 +1947,7 @@ function safeToUpdate() {
   if (state.adminEditing || state.add.editing) return false;
   const f = state.tab === 'add' ? $('#view-add #addForm') : null;
   if (f) { // filling in Add my lights: only if nothing's been entered yet
-    if ($('.picked', f) || $('#notes', f)?.value || $$('[aria-checked="true"], [aria-pressed="true"]', f).some(b => !b.matches('[data-view="drive"]'))) return false;
+    if ($('.picked', f) || $('#notes', f)?.value || $('#linkUrl', f)?.value || $$('[aria-checked="true"], [aria-pressed="true"]', f).some(b => !b.matches('[data-view="drive"]'))) return false;
   }
   return true;
 }

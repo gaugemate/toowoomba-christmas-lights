@@ -19,3 +19,15 @@ test('only a small JPEG photo preview is kept', () => {
   assert.equal(cleanEntry({ ...base, thumb: 'data:image/jpeg;base64,' + 'A'.repeat(THUMB_MAX) }).thumb, '');
   assert.equal(cleanEntry(base).thumb, '');
 });
+
+test('a website link is tidied into a safe https address, or dropped', async () => {
+  const { normLink, linkShort, cleanEntry } = await import('../src/store.js');
+  assert.equal(normLink('facebook.com/tinselcourtlights'), 'https://facebook.com/tinselcourtlights');
+  assert.equal(normLink('  www.Example.com.au '), 'https://www.example.com.au/');
+  assert.equal(normLink('http://example.com/a?b=1'), 'http://example.com/a?b=1');
+  for (const bad of ['javascript:alert(1)', 'mailto:a@b.com', 'data:text/html,hi', 'not a link', 'localhost', 'https://user:pw@x.com', 'x.com/' + 'a'.repeat(300)]) assert.equal(normLink(bad), '', bad);
+  assert.equal(linkShort('https://www.facebook.com/tinselcourtlights/'), 'facebook.com/tinselcourtlights');
+  const c = cleanEntry({ address: '1 A St', lat: -27.5, lng: 151.9, link: 'javascript:x', linkTitle: 'Hi' });
+  assert.equal(c.link, ''); assert.equal(c.linkTitle, '');
+  assert.equal(cleanEntry({ link: 'fb.com/x', linkTitle: 'y'.repeat(60) }).linkTitle.length, 40);
+});

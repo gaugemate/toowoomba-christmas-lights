@@ -415,3 +415,10 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 @keyframes spin{to{transform:rotate(360deg)}}
 #refreshAdmin:disabled{opacity:1}
 @media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+
+/* A display's website / Facebook link on its card */
+.dlink{display:flex;flex-direction:column;gap:4px}
+.btn.linkout{color:#145B35;border-color:#145B35;font-weight:700;min-width:0}
+.btn.linkout span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn.linkout svg{width:22px;height:22px;flex:none}
+.dlink small{text-align:center;font-size:13px;color:#666;overflow-wrap:anywhere}

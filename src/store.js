@@ -10,7 +10,7 @@ const LS = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } }
 };
 
-export const FIELDS = ['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing', 'from', 'until', 'hours', 'notes', 'thumb'];
+export const FIELDS = ['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing', 'from', 'until', 'hours', 'notes', 'thumb', 'link', 'linkTitle'];
 
 // A photo's small preview (kept in the display) and the full photo (kept separately): JPEG pictures only
 export const THUMB_MAX = 12000, PHOTO_MAX = 350000;
@@ -27,6 +27,25 @@ export const offTonight = (d, now) => !!d && d.offDate === nightKey(now);
 // The season a "Start a new year" begins: from July it's next year's, before July it's this year's
 export const newSeasonYear = (now = new Date()) => (now.getMonth() >= 6 ? now.getFullYear() + 1 : now.getFullYear());
 
+// A web address someone typed ("facebook.com/mypage", "www.x.com.au", "https://..."): the full https address,
+// or '' if it isn't a proper web address. Only http/https, so a link can never run code.
+export const LINK_MAX = 200, LINK_TITLE_MAX = 40;
+export function normLink(v) {
+  let t = String(v || '').trim();
+  if (!t) return '';
+  if (!/^https?:\/\//i.test(t)) { if (/^[a-z][a-z0-9+.-]*:/i.test(t) && !/^[^:]+:\d/.test(t)) return ''; t = 'https://' + t; }
+  try {
+    const u = new URL(t);
+    if (!/^https?:$/.test(u.protocol) || !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(u.hostname) || u.username || u.password) return '';
+    const href = u.href;
+    return href.length <= LINK_MAX && /^https?:\/\/[^\s<>"]+$/.test(href) ? href : '';
+  } catch (e) { return ''; }
+}
+// How a link is shown under its button: "facebook.com/tinselcourtlights"
+export function linkShort(href) {
+  try { const u = new URL(href); return (u.hostname.replace(/^www\./, '') + u.pathname.replace(/\/$/, '') + u.search).slice(0, 60); } catch (e) { return ''; }
+}
+
 export function cleanEntry(d) {
   const s = (v, max) => String(v || '').trim().slice(0, max);
   return {
@@ -36,7 +55,8 @@ export function cleanEntry(d) {
     features: (d.features || []).slice(0, 10).map(f => s(f, 20)),
     viewing: d.viewing === 'walk' ? 'walk' : 'drive',
     from: s(d.from, 10), until: s(d.until, 10), hours: s(d.hours, 30), notes: s(d.notes, 200),
-    thumb: isJpeg(d.thumb, THUMB_MAX) ? d.thumb : ''
+    thumb: isJpeg(d.thumb, THUMB_MAX) ? d.thumb : '',
+    link: normLink(d.link), linkTitle: normLink(d.link) ? s(d.linkTitle, LINK_TITLE_MAX) : ''
   };
 }
 
@@ -83,7 +103,7 @@ function demoStore() {
     async unapprove(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'pending' } : d))); },
     async myDisplays() { return extra().filter(d => d.mine); },
     async update(id, entry, status) {
-      const c = cleanEntry(entry); if (!('thumb' in entry)) delete c.thumb;
+      const c = cleanEntry(entry); for (const k of ['thumb', 'link', 'linkTitle']) if (!(k in entry)) delete c[k];
       save(extra().map(d => (d.id === id ? { ...d, ...c, status, updatedAt: Date.now() } : d)));
     },
     async reject(id) { save(extra().filter(d => d.id !== id)); setPhoto(id, null); },
@@ -150,13 +170,13 @@ async function liveStore(cfg) {
       const data = { ...cleanEntry(entry), status: 'pending', createdAt: fs.serverTimestamp() };
       const u = await phoneId();
       if (u) data.ownerUid = u.uid; else data.thumb = ''; // a photo needs this phone's ID, so it can be checked first
-      if (!data.thumb) delete data.thumb;
+      for (const k of ['thumb', 'link', 'linkTitle']) if (!data[k]) delete data[k];
       let ref;
       try { ref = await fs.addDoc(col, data); }
       catch (e) {
         // Older database rules don't know about photos or ownerUid yet: send it without them, so nobody is ever turned away
-        if (e.code !== 'permission-denied' || (!data.ownerUid && !data.thumb)) throw e;
-        delete data.thumb; photo = null;
+        if (e.code !== 'permission-denied' || (!data.ownerUid && !data.thumb && !data.link)) throw e;
+        delete data.thumb; delete data.link; delete data.linkTitle; photo = null;
         try { ref = await fs.addDoc(col, data); }
         catch (e2) { if (!data.ownerUid || e2.code !== 'permission-denied') throw e2; delete data.ownerUid; ref = await fs.addDoc(col, data); }
       }
@@ -219,7 +239,7 @@ async function liveStore(cfg) {
     },
     async update(id, entry, status) {
       const data = { ...cleanEntry(entry), status, updatedAt: fs.serverTimestamp() };
-      if (!('thumb' in entry)) delete data.thumb; // leave the photo as it was
+      for (const k of ['thumb', 'link', 'linkTitle']) if (!(k in entry)) delete data[k]; // leave the photo and link as they were
       await fs.updateDoc(fs.doc(db, 'displays', id), data);
     },
     isAdmin() {

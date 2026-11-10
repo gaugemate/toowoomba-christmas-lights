@@ -12,6 +12,8 @@ rules_version = '2';
 //   display can only put up a new photo while it's waiting for a check (so every photo is checked).
 // - The person who added a display can switch it off for one night ("offDate" = that night's date, e.g. for
 //   bad weather) without it going back for a check. It turns itself back on the next day.
+// - A display can have a link to a website or Facebook page ("link", https:// only) with the owner's button
+//   wording ("linkTitle"). A new or changed link is checked like a new address; taking a link off needs no re-check.
 // - "Start a new year" (admins only) copies every display into archive/<year> before clearing the map.
 // - Admins are listed in the "admins" collection: one document per admin, named with their user ID
 //   (shown on the app's #admin page after they sign in). Add those by hand in the Firebase console.
@@ -43,12 +45,14 @@ service cloud.firestore {
         && (!('hours' in d) || str(d.hours, 30))
         && (!('notes' in d) || str(d.notes, 200))
         && (!('offDate' in d) || str(d.offDate, 10))
-        && (!('thumb' in d) || (str(d.thumb, 12000) && (d.thumb == '' || d.thumb.matches('data:image/jpeg;base64,.*'))));
+        && (!('thumb' in d) || (str(d.thumb, 12000) && (d.thumb == '' || d.thumb.matches('data:image/jpeg;base64,.*'))))
+        && (!('link' in d) || (str(d.link, 200) && (d.link == '' || d.link.matches('https?://[^\\s<>"]+'))))
+        && (!('linkTitle' in d) || str(d.linkTitle, 40));
     }
 
     function validNewDisplay(d) {
       return d.keys().hasOnly(['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing',
-                               'from', 'until', 'hours', 'notes', 'thumb', 'status', 'createdAt', 'ownerUid'])
+                               'from', 'until', 'hours', 'notes', 'thumb', 'link', 'linkTitle', 'status', 'createdAt', 'ownerUid'])
         && d.keys().hasAll(['address', 'lat', 'lng', 'size', 'viewing', 'status', 'createdAt'])
         && d.status == 'pending'
         && d.createdAt == request.time
@@ -65,11 +69,12 @@ service cloud.firestore {
         && after.ownerUid == before.ownerUid
         && goodDetails(after)
         && changed.hasOnly(['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing',
-                            'from', 'until', 'hours', 'notes', 'thumb', 'offDate', 'status', 'updatedAt'])
+                            'from', 'until', 'hours', 'notes', 'thumb', 'link', 'linkTitle', 'offDate', 'status', 'updatedAt'])
         && (after.status == 'pending'
             || (before.status == 'approved' && after.status == 'approved'
-                && changed.hasOnly(['size', 'features', 'viewing', 'from', 'until', 'hours', 'thumb', 'offDate', 'updatedAt'])
-                && (!changed.hasAny(['thumb']) || after.thumb == '')));   // taking a photo off needs no re-check
+                && changed.hasOnly(['size', 'features', 'viewing', 'from', 'until', 'hours', 'thumb', 'link', 'linkTitle', 'offDate', 'updatedAt'])
+                && (!changed.hasAny(['thumb']) || after.thumb == '')       // taking a photo off needs no re-check
+                && (!changed.hasAny(['link', 'linkTitle']) || after.get('link', '') == '')));   // nor does taking a link off
     }
 
     match /displays/{id} {
