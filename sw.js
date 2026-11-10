@@ -3,7 +3,7 @@
 // - Map pictures: saved as they're viewed (up to MAX_TILES) so maps you've looked at still show offline.
 // - Address search, road times and the database are never saved here; the app has its own fallbacks for those.
 // Bump VERSION when the list of APP_FILES changes.
-const VERSION = 'v48'; // must match src/version.js
+const VERSION = 'v49'; // must match src/version.js
 const APP_CACHE = `tcl-app-${VERSION}`;
 const TILE_CACHE = 'tcl-tiles';
 const LIB_CACHE = 'tcl-libs'; // the database code from Google: each version never changes, so keep it

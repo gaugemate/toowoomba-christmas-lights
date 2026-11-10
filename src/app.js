@@ -271,7 +271,7 @@ function renderPlan() {
 
   const subs = suburbsWithCounts();
   v.innerHTML = `
-    <div class="page-heading"><h1>Plan a lights drive</h1><p>Find the best Christmas light displays around Toowoomba.</p></div>
+    <div class="page-heading"><h1>Plan A Lights Drive</h1></div>
     <div class="card">
       ${cardHead(ICON.pinLine, 'Where are you starting?')}
       <div id="startBox"></div>
@@ -279,7 +279,7 @@ function renderPlan() {
     </div>
     <div class="card">
       ${cardHead(ICON.map, 'Which suburbs?')}
-      <div class="chips more" id="subChips">
+      <div class="chips more twocol" id="subChips">
         <button class="chip" type="button" data-sub="" aria-pressed="${P.suburbs.size === 0}">Anywhere near me</button>
         ${subs.map(([s, n], i) => `<button class="chip${i >= 8 ? ' extra' : ''}" type="button" data-sub="${esc(s)}" aria-pressed="${P.suburbs.has(s)}">${esc(s)} <small>${n}</small></button>`).join('')}
       </div>
@@ -328,7 +328,14 @@ function renderPlan() {
     drawHint();
   };
   const more = $('#moreSubs', v);
-  if (more) more.onclick = () => { const c = $('#subChips', v); c.classList.toggle('open'); more.textContent = c.classList.contains('open') ? 'Show fewer' : 'Show all suburbs'; };
+  // An odd number of suburbs showing: centre the last one under the two columns
+  const centreLast = () => {
+    const c = $('#subChips', v), shown = $$('[data-sub]:not([data-sub=""])', c).filter(b => getComputedStyle(b).display !== 'none');
+    $$('.lone', c).forEach(b => b.classList.remove('lone'));
+    if (shown.length % 2) shown[shown.length - 1].classList.add('lone');
+  };
+  centreLast();
+  if (more) more.onclick = () => { const c = $('#subChips', v); c.classList.toggle('open'); more.textContent = c.classList.contains('open') ? 'Show fewer' : 'Show all suburbs'; centreLast(); };
 
   const drawTime = () => {
     const h = Math.floor(P.minutes / 60), m = P.minutes % 60;
@@ -1052,7 +1059,9 @@ function renderMapTab() {
   $('#dispList', v).onclick = e => {
     const b = e.target.closest('[data-id]'); if (!b) return;
     const d = state.displays.find(x => x.id === b.dataset.id);
-    map.setView([d.lat, d.lng], 16); showSheet(d); scrollTop();
+    map.setView([d.lat, d.lng], 16); showSheet(d);
+    const sc = $('#scroller'), card = $('#sheet .sheet', v);
+    if (card) sc.scrollTo({ top: Math.max(0, sc.scrollTop + card.getBoundingClientRect().top - sc.getBoundingClientRect().top - 12), behavior: 'smooth' });
   };
   // Came from "Near me now": open that display
   if (state.mapFocus) {
@@ -1587,8 +1596,6 @@ async function renderAdmin() {
     <p class="note on-page">New displays appear here by themselves as people add them.</p>
     ${loadErr ? `<div class="card"><p class="status err" style="margin:0">Couldn't load the waiting list (${esc(loadErr.code || loadErr.message || 'unknown error')}). Tap Refresh. If it keeps happening, sign out at the bottom of this page and sign in again.</p></div>` : ''}
     ${S.mode === 'demo' ? '<p class="demo-note">Demo mode: entries and approvals are kept on this phone only. Once the database is connected, everyone\'s entries land here.</p>' : ''}
-    <div class="card"><h2>Link for the Facebook post</h2><p class="note">People tap this to add their display.</p>
-      <input type="text" readonly value="${esc(link)}" id="addLink"><button class="btn wide" type="button" id="copyLink">Copy link</button></div>
     <h2 class="on-page" style="color:#fff">Waiting for a check (${pending.length})</h2>
     ${pending.length ? pending.map(d => `
       <div class="card pending" data-id="${esc(d.id)}">
@@ -1613,6 +1620,8 @@ async function renderAdmin() {
       <small class="rowmeta">${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${d.hours ? ' · ' + esc(d.hours) : ''}${offTonight(d) ? ' · <b>switched off tonight</b>' : ''}</small>
       ${d.thumb ? `<img class="minipic" src="${esc(d.thumb)}" alt=""><button class="linkbtn" type="button" data-nophoto="${esc(d.id)}">Remove the photo</button>` : ''}
       <span class="adminbtns">${S.update && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-edit="${esc(d.id)}">Edit</button>` : ''}${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" type="button" data-remove="${esc(d.id)}">Remove</button></span></div></li>`; }).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
+    <div class="card" style="margin-top:14px"><h2>Link for the Facebook post</h2><p class="note">People tap this to add their display.</p>
+      <input type="text" readonly value="${esc(link)}" id="addLink"><button class="btn wide" type="button" id="copyLink">Copy link</button></div>
     ${S.signOut ? '<button class="linkbtn on-page" type="button" id="signOut" style="color:#fff">Sign out of admin on this phone</button>' : ''}
     ${S.diagnose ? '<button class="btn wide" type="button" id="diagnose">Check the database</button><div id="diagOut"></div>' : ''}
     ${S.startNewYear ? `<div class="card newseason"><h2>New season</h2>
