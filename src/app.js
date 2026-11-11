@@ -1034,7 +1034,7 @@ function renderMapTab() {
       <option value="">Every suburb (${state.displays.length})</option>
       ${subs.map(([s, n]) => `<option value="${esc(s)}" ${s === filter ? 'selected' : ''}>${esc(s)} (${n})</option>`).join('')}
     </select>
-    <ul class="list" id="dispList">${listHTML(shown)}</ul>
+    <ul class="blist" id="dispList">${listHTML(shown)}</ul>
     ${state.displays.length ? `<div class="card printcard"><h2>Prefer paper?</h2>
       <p class="note" style="margin:0">Get every display as a neat list, sorted by suburb, to print or email to yourself.</p>
       <button class="btn go wide" type="button" id="printList">${ICON.printer}Print or save the list</button></div>` : ''}`;
@@ -1204,12 +1204,22 @@ const driveMins = m => Math.max(1, Math.round(m <= 3000 ? m / 400 : 7.5 + (m - 3
 const thumbHTML = d => (d.thumb ? `<img class="lthumb" src="${esc(d.thumb)}" alt="">` : `<span class="lthumb none">${ICON.picture}</span>`);
 
 function listHTML(list) {
-  if (!list.length) return '<li class="group">No displays yet</li>';
+  if (!list.length) return '<li class="bhead"><h3>No displays yet</h3></li>';
   const pics = list.some(d => d.thumb); // photo column only once some displays have photos
   const by = new Map();
   for (const d of list) { if (!by.has(d.suburb)) by.set(d.suburb, []); by.get(d.suburb).push(d); }
-  return [...by.keys()].sort().map(s => `<li class="group">${esc(s)}</li>` + by.get(s).sort((a, b) => b.size - a.size).map(d =>
-    `<li><button class="lrow${pics ? ' withpic' : ''}" type="button" data-id="${esc(d.id)}">${pics ? thumbHTML(d) : ''}<span><b>${esc(d.address)}</b><small>${sizeName(d.size)}${d.notes ? ' · ' + esc(d.notes) : ''}</small></span>${seen.has(d.id) ? `<span class="seentick" aria-label="Seen">${ICON.tick}</span>` : `<span class="stars">${stars(d.size)}</span>`}</button></li>`).join('')).join('');
+  return [...by.keys()].sort().map(s => `<li class="bhead"><h3>${esc(s)}</h3><span>${by.get(s).length} display${by.get(s).length > 1 ? 's' : ''}</span></li>` + by.get(s).sort((a, b) => b.size - a.size).map(d => {
+    const st = listStatus(d);
+    return `<li><button class="brow${pics ? ' withpic' : ''}" type="button" data-id="${esc(d.id)}"><span class="kdot ${st.on ? 'on' : 'off'}" aria-hidden="true"></span>${pics ? thumbHTML(d) : ''}<span><b>${esc(d.address)}</b><small>${esc(st.text)} · ${sizeName(d.size)}</small></span>${seen.has(d.id) ? `<span class="seentick" aria-label="Seen">${ICON.tick}</span>` : `<span class="stars">${stars(d.size)}</span>`}</button></li>`;
+  }).join('')).join('');
+}
+// The red or grey dot (same as the map) and a few words for one display in the All lights list
+function listStatus(d) {
+  const t = isoDay(new Date());
+  if (offTonight(d)) return { on: false, text: 'Off tonight' };
+  if (litTonight(d)) return { on: true, text: 'On tonight' };
+  if (d.from && d.from > t) return { on: preSeason(), text: `Starts ${fmtDate(d.from)}` };
+  return { on: false, text: 'Finished for this year' };
 }
 
 /* =================================================================== ADD MY LIGHTS */

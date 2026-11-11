@@ -422,3 +422,16 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .btn.linkout span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btn.linkout svg{width:22px;height:22px;flex:none}
 .dlink small{text-align:center;font-size:13px;color:#666;overflow-wrap:anywhere}
+
+/* All lights list: gold suburb headings on the green, a white card for each display */
+.blist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.blist .bhead{display:flex;align-items:baseline;gap:10px;margin:14px 4px 2px;padding-bottom:6px;border-bottom:2px solid rgba(255,201,40,.45)}
+.blist .bhead:first-child{margin-top:2px}
+.blist .bhead h3{margin:0;color:var(--gold-primary);font-weight:900;font-size:1.45rem;line-height:1.2}
+.blist .bhead span{margin-left:auto;color:var(--green-light);font-weight:600;font-size:.95rem;white-space:nowrap}
+.blist .brow{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;width:100%;min-height:62px;padding:12px 14px;border:0;border-radius:14px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.blist .brow.withpic{grid-template-columns:auto 56px 1fr auto}
+.blist .brow b{display:block;font-weight:800;font-size:1.1rem;line-height:1.25}
+.blist .brow small{display:block;color:var(--muted);font-size:.95rem;font-weight:500}
+.blist .brow .stars{color:var(--gold-deep);white-space:nowrap}
+.blist .brow .kdot{width:18px;height:18px}
