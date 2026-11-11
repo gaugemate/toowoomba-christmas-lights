@@ -665,6 +665,9 @@ function openFullMap() {
   fitTo(map, pts);
 }
 function closeFullMap() { const o = $('#fullMap'); if (o) o.remove(); }
+// The pop-up card of one display (All lights page)
+function closeDisplayPop() { const o = $('#dpop'); if (o) o.remove(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDisplayPop(); });
 
 /* ---------- the drive: the app guides you turn by turn ---------- */
 const ARROWS = {
@@ -1060,19 +1063,43 @@ function renderMapTab() {
   $('#dispList', v).onclick = e => {
     const b = e.target.closest('[data-id]'); if (!b) return;
     const d = state.displays.find(x => x.id === b.dataset.id);
-    map.setView([d.lat, d.lng], 16); showSheet(d);
-    const sc = $('#scroller'), card = $('#sheet .sheet', v);
-    if (card) sc.scrollTo({ top: Math.max(0, sc.scrollTop + card.getBoundingClientRect().top - sc.getBoundingClientRect().top - 12), behavior: 'smooth' });
+    map.setView([d.lat, d.lng], 16); showSheet(d); // pops up over the list, so the page doesn't move
   };
   // Came from "Near me now": open that display
   if (state.mapFocus) {
     const d = state.displays.find(x => x.id === state.mapFocus); state.mapFocus = null;
     if (d) { map.setView([d.lat, d.lng], 16); showSheet(d); }
   }
+  // A display's card. On the All lights page it pops up from the bottom of the screen, always in the same
+  // place, over the list (which stays where it was). In "See full view" it sits at the bottom of the map.
   function showSheet(d, bringIntoView = false, host = null, onSeen = null) {
-    const s = host || $('#sheet', v);
-    const seenBtn = () => (seen.has(d.id) ? `${ICON.tick}Seen it` : `${ICON.tick}Tick it off: I've seen it`);
-    s.innerHTML = `<div class="card sheet${d.thumb ? ' haspic' : ''}">
+    const pop = !host;
+    const seenBtn = () => (pop ? `${ICON.tick}Seen it` : seen.has(d.id) ? `${ICON.tick}Seen it` : `${ICON.tick}Tick it off: I've seen it`);
+    let s = host;
+    if (pop) {
+      closeDisplayPop();
+      s = document.createElement('div');
+      s.id = 'dpop'; s.className = 'dpop'; s.setAttribute('role', 'dialog'); s.setAttribute('aria-modal', 'true'); s.setAttribute('aria-label', d.address);
+      s.innerHTML = `<div class="dpop-panel">
+        <div class="dpop-top"><span class="dpop-grab" aria-hidden="true"></span><button class="btn dpop-close" type="button">Close <span aria-hidden="true">✕</span></button></div>
+        <div class="dpop-body">
+          ${d.thumb ? `<img class="dphoto" id="sheetPic" src="${esc(d.thumb)}" alt="Photo of the lights at ${esc(d.address)}">` : ''}
+          <div><b style="font-size:1.3rem;display:block;line-height:1.25">${esc(d.address)}</b><span class="muted" style="font-weight:600">${esc(d.suburb)}</span></div>
+          <div class="sz" style="display:flex;gap:8px;flex-wrap:wrap"><span class="tag gold">${stars(d.size)} ${sizeName(d.size)}</span>
+            ${d.viewing === 'walk' ? '<span class="tag">Park and walk</span>' : ''}${(d.features || []).map(f => `<span class="tag">${esc(FEATURES[f] || f)}</span>`).join('')}</div>
+          ${whyOff(d) ? `<p class="offline-why"><span class="kdot off"></span><span><b>Off tonight.</b> ${esc(whyOff(d))}</span></p>` : ''}
+          ${d.hours ? `<p class="note" style="margin:0">Lights on ${esc(d.hours)}</p>` : ''}
+          ${linkButton(d)}
+          ${d.notes ? `<p class="dnotes">${esc(d.notes)}</p>` : ''}
+        </div>
+        <div class="dpop-foot"><a class="btn go" href="${svc.navigateUrl(d)}" target="_blank" rel="noopener">${ICON.nav}Directions</a>
+          <button class="btn seenbtn" type="button" id="seenBtn" aria-pressed="${seen.has(d.id)}">${seenBtn()}</button></div>
+      </div>`;
+      document.body.append(s);
+      $('.dpop-close', s).onclick = closeDisplayPop;
+      s.onclick = e => { if (e.target === s) closeDisplayPop(); }; // tapped the dimmed list around it
+      $('.dpop-close', s).focus({ preventScroll: true });
+    } else s.innerHTML = `<div class="card sheet${d.thumb ? ' haspic' : ''}">
       ${d.thumb ? `<img class="dphoto" id="sheetPic" src="${esc(d.thumb)}" alt="Photo of the lights at ${esc(d.address)}">` : ''}
       <button class="x" type="button" aria-label="Close">×</button>
       <div><b style="font-size:1.25rem;display:block;padding-right:50px">${esc(d.address)}</b><span class="muted" style="font-weight:600">${esc(d.suburb)}</span></div>
@@ -1084,7 +1111,7 @@ function renderMapTab() {
       ${d.hours ? `<p class="note">Lights on ${esc(d.hours)}</p>` : ''}
       <a class="btn go wide" href="${svc.navigateUrl(d)}" target="_blank" rel="noopener">${ICON.nav}Directions</a>
       <button class="btn wide seenbtn" type="button" id="seenBtn" aria-pressed="${seen.has(d.id)}">${seenBtn()}</button></div>`;
-    $('.x', s).onclick = () => { s.innerHTML = ''; };
+    if (!pop) $('.x', s).onclick = () => { s.innerHTML = ''; };
     $('#seenBtn', s).onclick = e => {
       const yes = !seen.has(d.id); setSeen(d.id, yes);
       e.currentTarget.setAttribute('aria-pressed', yes); e.currentTarget.innerHTML = seenBtn();
@@ -1093,8 +1120,6 @@ function renderMapTab() {
       if (onSeen) onSeen(d);
       if (yes) toast(`Ticked: ${seenCount()} of ${state.displays.length} seen`);
     };
-    // Tapped a dot: bring the display's card into view (it sits under the map, often below the screen)
-    if (bringIntoView) setTimeout(() => s.firstElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60);
     // The small preview shows at once; the full photo replaces it when it arrives
     if (d.thumb && state.store) state.store.getPhoto(d.id).then(img => { const el = $('#sheetPic', s); if (img && el) el.src = img; });
   }
@@ -1814,7 +1839,7 @@ function fitNumbers(root = document) {
 new MutationObserver(() => requestAnimationFrame(() => fitNumbers())).observe(document.querySelector('main'), { childList: true, subtree: true });
 
 function show(tab, { keepScroll = false } = {}) {
-  closePopup(); closeFullMap();
+  closePopup(); closeFullMap(); closeDisplayPop();
   if (tab !== 'admin') state.adminEditing = false;
   if (tab !== 'map') state.near = null;
   if (!['plan', 'map', 'add', 'admin'].includes(tab)) tab = 'plan';
@@ -1952,7 +1977,7 @@ async function latestVersion() {
 function safeToUpdate() {
   const P = state.plan;
   if (P.drive || ['results', 'route', 'drive'].includes(P.step)) return false;
-  if ($('#popup') || $('#arrival')) return false;
+  if ($('#popup') || $('#arrival') || $('#dpop')) return false;
   if (state.adminEditing || state.add.editing) return false;
   const f = state.tab === 'add' ? $('#view-add #addForm') : null;
   if (f) { // filling in Add my lights: only if nothing's been entered yet

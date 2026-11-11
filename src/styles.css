@@ -277,7 +277,7 @@ nav.tabs button[aria-selected="true"]{color:var(--gold-primary)}
 nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-6px;left:20%;width:60%;height:3px;border-radius:3px;background:var(--gold-primary)}
 @media (min-width:600px){nav.tabs{padding-left:max(8px,calc((100% - 560px) / 2));padding-right:max(8px,calc((100% - 560px) / 2))}}
 
-.toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + 12px + max(6px,calc(env(safe-area-inset-bottom,0px) - 18px)) + 12px);transform:translateX(-50%);z-index:50;background:#111;color:#fff;padding:12px 18px;border-radius:12px;font-weight:600;max-width:90vw;pointer-events:none;transition:opacity .4s}
+.toast{z-index:5100!important;position:fixed;left:50%;bottom:calc(var(--nav-h) + 12px + max(6px,calc(env(safe-area-inset-bottom,0px) - 18px)) + 12px);transform:translateX(-50%);z-index:50;background:#111;color:#fff;padding:12px 18px;border-radius:12px;font-weight:600;max-width:90vw;pointer-events:none;transition:opacity .4s}
 
 /* Guided drive: one big instruction at the top, readable at a glance in a car */
 .instr{display:flex;align-items:center;gap:14px;background:var(--surface);color:var(--ink);border-radius:14px;padding:14px 16px;min-height:112px;border:4px solid var(--surface)}
@@ -436,3 +436,21 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .blist .brow small{display:block;color:var(--muted);font-size:.9rem;font-weight:500}
 .blist .brow .stars{color:var(--gold-deep);white-space:nowrap;font-size:.85rem;letter-spacing:-1px}
 .blist .brow .kdot{width:16px;height:16px}
+
+/* All lights: a display's card pops up from the bottom, always in the same place */
+.dpop{position:fixed;inset:0;z-index:4500;background:rgba(0,0,0,.5);display:flex;flex-direction:column;justify-content:flex-end;overscroll-behavior:contain}
+.dpop-panel{background:var(--surface);color:var(--ink);border-radius:22px 22px 0 0;max-height:calc(var(--app-h,100vh) * .88);display:flex;flex-direction:column;box-shadow:0 -6px 24px rgba(0,0,0,.35);animation:dpopup .22s ease-out;width:100%;max-width:640px;margin:0 auto}
+@keyframes dpopup{from{transform:translateY(48px);opacity:.5}to{transform:none;opacity:1}}
+.dpop-top{position:relative;flex:none;height:56px}
+.dpop-grab{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:44px;height:5px;border-radius:3px;background:#c9d1cc}
+.dpop-close{position:absolute;right:12px;top:8px;min-height:42px;padding:6px 14px;gap:6px;font-size:16px;font-weight:700;background:#eef1ef;border:0;color:var(--ink)}
+.dpop-close span{font-size:18px;line-height:1}
+.dpop-body{overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:0 18px 14px;display:flex;flex-direction:column;gap:12px}
+.dpop-body .dphoto{aspect-ratio:auto;height:min(27vh,260px);flex:none}
+.dpop-body p{margin:0}
+.dnotes{overflow-wrap:anywhere}
+.dpop-foot{flex:none;display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface)}
+.dpop-foot .btn{min-height:54px;margin:0}
+.dpop-foot .seenbtn{padding:8px 16px;white-space:nowrap}
+.dpop-foot .btn.go{white-space:nowrap;min-width:0}
+.sheet p{overflow-wrap:anywhere}
