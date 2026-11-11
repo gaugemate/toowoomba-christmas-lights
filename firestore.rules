@@ -14,6 +14,11 @@ rules_version = '2';
 //   bad weather) without it going back for a check. It turns itself back on the next day.
 // - A display can have a link to a website or Facebook page ("link", https:// only) with the owner's button
 //   wording ("linkTitle"). A new or changed link is checked like a new address; taking a link off needs no re-check.
+// - Owner's name (security only, never public): owners/<display ID> holds the first and last name of the person who
+//   added it. Someone on another phone (or whose browser forgot them) gets back in by picking their address and typing
+//   the same name: that writes claims/<their ID>_<display ID>, which lets that phone see and edit the display (with the
+//   same checks as the owner) and switch it off for the night, but NOT remove it: only the phone that added it, or an
+//   admin, can remove a display. A display added before names existed is claimed by the first person to give a name.
 // - "Start a new year" (admins only) copies every display into archive/<year> before clearing the map.
 // - Admins are listed in the "admins" collection: one document per admin, named with their user ID
 //   (shown on the app's #admin page after they sign in). Add those by hand in the Firebase console.
@@ -30,6 +35,13 @@ service cloud.firestore {
     }
 
     function str(v, max) { return v is string && v.size() <= max; }
+
+    // A phone that found this display by its address and the owner's name (see owners and claims below)
+    function isManager(id) {
+      let claim = /databases/$(database)/documents/claims/$(request.auth.uid + '_' + id);
+      let owner = /databases/$(database)/documents/owners/$(id);
+      return request.auth != null && exists(claim) && exists(owner) && get(claim).data.name == get(owner).data.name;
+    }
 
     // The details a display can have, whoever is writing them
     function goodDetails(d) {
@@ -60,13 +72,13 @@ service cloud.firestore {
         && goodDetails(d);
     }
 
-    // The person who added a display editing it
-    function ownerEdit() {
+    // The person who added a display (or found it with their name) editing it
+    function ownerEdit(id) {
       let before = resource.data;
       let after = request.resource.data;
       let changed = after.diff(before).affectedKeys();
-      return isOwner(before)
-        && after.ownerUid == before.ownerUid
+      return (isOwner(before) || isManager(id))
+        && after.get('ownerUid', null) == before.get('ownerUid', null)
         && goodDetails(after)
         && changed.hasOnly(['address', 'suburb', 'lat', 'lng', 'size', 'features', 'viewing',
                             'from', 'until', 'hours', 'notes', 'thumb', 'link', 'linkTitle', 'offDate', 'status', 'updatedAt'])
@@ -78,9 +90,9 @@ service cloud.firestore {
     }
 
     match /displays/{id} {
-      allow read: if resource.data.status == 'approved' || isAdmin() || isOwner(resource.data);
+      allow read: if resource.data.status == 'approved' || isAdmin() || isOwner(resource.data) || isManager(id);
       allow create: if validNewDisplay(request.resource.data);
-      allow update: if isAdmin() || ownerEdit();
+      allow update: if isAdmin() || ownerEdit(id);
       allow delete: if isAdmin() || isOwner(resource.data);
     }
 
@@ -94,12 +106,53 @@ service cloud.firestore {
       }
       allow read: if isAdmin()
         || (exists(/databases/$(database)/documents/displays/$(id)) && display().status == 'approved')
-        || (request.auth != null && resource.data.ownerUid == request.auth.uid);
+        || (request.auth != null && resource.data.ownerUid == request.auth.uid)
+        || isManager(id);
       allow create, update: if request.auth != null && goodPhoto(request.resource.data)
         && (isAdmin()
             || (request.resource.data.ownerUid == request.auth.uid
-                && display().ownerUid == request.auth.uid && display().status == 'pending'));
-      allow delete: if isAdmin() || (request.auth != null && resource.data.ownerUid == request.auth.uid);
+                && display().ownerUid == request.auth.uid && display().status == 'pending')
+            || (isManager(id) && request.resource.data.ownerUid == display().ownerUid && display().status == 'pending'));
+      allow delete: if isAdmin() || (request.auth != null && resource.data.ownerUid == request.auth.uid) || isManager(id);
+    }
+
+    // The owner's name for a display (document ID = the display's ID). Never public: only admins, and the phone
+    // that added the display, can read it. "name" is lower case with single spaces, e.g. "brad smith".
+    match /owners/{id} {
+      function disp() { return get(/databases/$(database)/documents/displays/$(id)).data; }
+      function dispAfter() { return getAfter(/databases/$(database)/documents/displays/$(id)).data; }
+      function goodOwner(o) {
+        return o.keys().hasOnly(['name', 'first', 'last', 'updatedAt'])
+          && str(o.name, 81) && o.name.size() >= 3 && str(o.first, 40) && o.first.size() > 0 && str(o.last, 40) && o.last.size() > 0
+          && o.updatedAt == request.time;
+      }
+      allow read: if isAdmin()
+        || (request.auth != null && exists(/databases/$(database)/documents/displays/$(id)) && disp().ownerUid == request.auth.uid);
+      allow create: if request.auth != null && goodOwner(request.resource.data)
+        && (dispAfter().get('ownerUid', '') == request.auth.uid       // the phone adding (or that added) the display
+            || existsAfter(/databases/$(database)/documents/claims/$(request.auth.uid + '_' + id)));  // first to give a name
+      allow update: if isAdmin()
+        || (request.auth != null && goodOwner(request.resource.data) && disp().get('ownerUid', '') == request.auth.uid);
+      // goes with the display: removed by an admin, or by the phone that added it (just before removing the display)
+      allow delete: if isAdmin()
+        || (request.auth != null && exists(/databases/$(database)/documents/displays/$(id)) && disp().get('ownerUid', '') == request.auth.uid);
+    }
+
+    // "This display is mine": written when someone picks their address and types the owner's name. Only allowed if the
+    // name matches (or the display had no name yet, and the same write saves theirs). Claim ID = <their ID>_<display ID>.
+    match /claims/{cid} {
+      function ownerPath(d) { return /databases/$(database)/documents/owners/$(d); }
+      function goodClaim(c) {
+        return c.keys().hasOnly(['uid', 'displayId', 'name', 'at'])
+          && c.uid == request.auth.uid && c.displayId is string && cid == request.auth.uid + '_' + c.displayId
+          && str(c.name, 81) && c.at == request.time
+          && exists(/databases/$(database)/documents/displays/$(c.displayId))
+          && ((exists(ownerPath(c.displayId)) && get(ownerPath(c.displayId)).data.name == c.name)
+              || (!exists(ownerPath(c.displayId)) && getAfter(ownerPath(c.displayId)).data.name == c.name));
+      }
+      allow read: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow create, update: if request.auth != null && goodClaim(request.resource.data);
+      allow delete: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
     }
 
     // Last year's displays, copied here by "Start a new year" before the map is cleared. Admins only.

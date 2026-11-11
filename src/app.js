@@ -4,6 +4,16 @@ import { SIZES, planRoutes, shortlist, tourMinutes, hasMusic, MUSIC_VIEW_MIN, ra
 import * as svc from './services.js';
 import { searchGnaf, nearestAddress } from './gnaf.js';
 import { openStore, cleanEntry, newSeasonYear, THUMB_MAX, PHOTO_MAX, offTonight, normLink, linkShort, LINK_TITLE_MAX } from './store.js';
+
+// The owner's name note (Add my lights wizard, and the one-off question for people who added lights before names)
+const NAME_NOTE = 'This is a security feature only, and your name will <b>NEVER</b> be displayed publicly.';
+const nameFields = (first = '', last = '') => `
+  <div class="field"><label for="ownFirst">First name</label><input id="ownFirst" class="big" type="text" maxlength="40" autocomplete="given-name" autocapitalize="words" autocorrect="off" spellcheck="false" value="${esc(first)}"></div>
+  <div class="field"><label for="ownLast">Last name</label><input id="ownLast" class="big" type="text" maxlength="40" autocomplete="family-name" autocapitalize="words" autocorrect="off" spellcheck="false" value="${esc(last)}"></div>`;
+// Same address? ("8 Tinsel Ct" from the list always matches itself; ignore capitals, spaces and punctuation)
+const addrKey = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const sameAddress = (d, place) => addrKey(d.address) === addrKey(place.title)
+  && (!d.suburb || !place.suburb || addrKey(d.suburb) === addrKey(place.suburb));
 import { Guide, fmtDist, metres, bearingWords } from './guide.js';
 import { APP_VERSION } from './version.js';
 
@@ -665,6 +675,34 @@ function openFullMap() {
   fitTo(map, pts);
 }
 function closeFullMap() { const o = $('#fullMap'); if (o) o.remove(); }
+
+// People who added their lights before owner names existed: asked once, when the app opens on the phone that added them
+async function askOwnerName() {
+  const S = await state.storeReady;
+  if (!S.ownerNameNeeded || $('#namePrompt')) return;
+  const need = await S.ownerNameNeeded();
+  if (!need.length || $('#namePrompt') || state.plan.drive) return;
+  const o = document.createElement('div');
+  o.id = 'namePrompt'; o.className = 'nameprompt'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true');
+  o.innerHTML = `<form class="card" novalidate>
+      <h2>Keeping your display safe</h2>
+      <p style="margin:0">We've added a security feature. Please enter your first and last name so only you can change your display${need.length > 1 ? 's' : ''} (${need.map(d => esc(d.address)).join(', ')}), from any phone.</p>
+      ${nameFields()}
+      <p class="note" style="margin:0">${NAME_NOTE}</p>
+      <p class="status err" role="status"></p>
+      <button class="btn go wide" type="submit">Save and continue</button>
+    </form>`;
+  document.body.append(o);
+  $$('input', o).forEach(i => { i.oninput = () => { $('.status', o).textContent = ''; }; });
+  $('form', o).onsubmit = async e => {
+    e.preventDefault();
+    const first = $('#ownFirst', o).value.trim(), last = $('#ownLast', o).value.trim(), msg = $('.status', o), btn = $('button[type=submit]', o);
+    if (!first || !last) { msg.textContent = !first ? 'Please type your first name.' : 'Please type your last name.'; return; }
+    btn.disabled = true; btn.textContent = 'Saving…'; msg.textContent = '';
+    try { await S.setOwnerName(need.map(d => d.id), { first, last }); o.remove(); toast(`Thanks, ${first}. Your display is now protected.`); }
+    catch (ex) { console.warn(ex); btn.disabled = false; btn.textContent = 'Save and continue'; msg.textContent = "Couldn't save just now. Check you have signal and try again."; }
+  };
+}
 // The pop-up card of one display (All lights page)
 function closeDisplayPop() { const o = $('#dpop'); if (o) o.remove(); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDisplayPop(); });
@@ -1297,15 +1335,22 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
   };
   const [hOn, hOff] = String(d.hours || '7pm – 10pm').split(/\s*–\s*/).map(tidyHour);
   const heading = mode === 'new' ? 'Add your Christmas lights' : mode === 'admin' ? 'Edit this display' : 'Edit your display';
+  const wiz = mode === 'new';
   v.innerHTML = `
     ${mode !== 'new' ? '<button class="back" type="button" id="formBack">‹ Back</button>' : ''}
-    <h1>${heading}</h1>
-    <p class="note">${mode === 'new' ? "It's free and we don't need your name. Your display shows on the map once it's been checked."
-      : mode === 'edit' && d.status === 'approved' ? 'Changes to the size, what’s in it, how to see it and the times show straight away. Changing the address or notes means a quick re-check first.'
-      : 'Make your changes, then tap Save changes.'}</p>
-    <form id="addForm" novalidate>
+    ${wiz ? '<div class="wizhead" id="wizHead"></div>' : `<h1>${heading}</h1>`}
+    ${wiz ? '' : `<p class="note">${mode === 'edit' && d.status === 'approved' ? 'Changes to the size, what’s in it, how to see it and the times show straight away. Changing the address or notes means a quick re-check first.'
+      : 'Make your changes, then tap Save changes.'}</p>`}
+    <form id="addForm" novalidate${wiz ? ' class="wiz" data-step="1"' : ''}>
       <div class="view">
-        <div class="card">
+        ${wiz ? `<div class="card w1">
+          <h2>What's your name?</h2>
+          ${nameFields()}
+          <p class="note" style="margin:0">${NAME_NOTE}</p>
+          <p class="status err" id="wizErr1" role="status"></p>
+        </div>
+        <button class="btn go wide w1" type="button" id="wizNext1">Next ›</button>` : ''}
+        <div class="card${wiz ? ' w2' : ''}">
           <h2>${mode === 'admin' ? 'Address' : 'Your address'}</h2>
           <div id="addrBox"></div>
           <div id="pinWrap" hidden>
@@ -1313,7 +1358,12 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
             <p class="note" id="pinNote" style="margin-top:8px">Is the dot on the house? If not, drag it there.</p>
           </div>
           <div class="field" id="subField" hidden><label for="suburb">Suburb</label><input type="text" id="suburb" maxlength="60" autocomplete="address-level2"></div>
+          ${wiz ? '<p class="status err" id="wizErr2" role="status"></p>' : ''}
         </div>
+        ${wiz ? `<div class="w2" id="wizFound"></div>
+        <button class="btn go wide w2" type="button" id="wizNext2">Next ›</button>
+        <button class="btn wide w2" type="button" id="wizBack2">‹ Back</button>
+        <div class="card wizpicked" id="wizPicked"></div>` : ''}
         <div class="card">
           <h2>How big is the display?</h2>
           <div class="picker" role="radiogroup" aria-label="Display size">
@@ -1368,12 +1418,12 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
     </form>`;
   for (const id of ['#formBack', '#formCancel']) { const b = $(id, v); if (b) b.onclick = () => onCancel && onCancel(); }
 
-  let pinMap = null, pin = null;
+  let pinMap = null, pin = null, onAddrChange = () => {};
   const box = $('#addrBox', v);
   const drawAddr = () => {
     if (F.place) {
       box.innerHTML = pickedHTML(F.place);
-      $('[data-act=change]', box).onclick = () => { F.place = null; $('#pinWrap', v).hidden = true; $('#subField', v).hidden = true; drawAddr(); };
+      $('[data-act=change]', box).onclick = () => { F.place = null; $('#pinWrap', v).hidden = true; $('#subField', v).hidden = true; drawAddr(); onAddrChange(); };
       $('#pinWrap', v).hidden = false; $('#subField', v).hidden = false;
       $('#suburb', v).value = F.place.suburb || '';
       const note = $('#pinNote', v);
@@ -1464,8 +1514,65 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
   };
   showRadio();
 
+  // ---- The wizard: 1 your name, 2 your address (or "welcome back" if it's already on the map), 3 the rest
+  const form = $('#addForm', v);
+  const owner = () => ({ first: ($('#ownFirst', v)?.value || '').trim(), last: ($('#ownLast', v)?.value || '').trim() });
+  const goStep = n => {
+    form.dataset.step = n;
+    const first = esc(owner().first);
+    $('#wizHead', v).innerHTML = `<div class="wizdots">${[1, 2, 3].map(i => `<i class="${i < n ? 'done' : i === n ? 'now' : ''}"></i>`).join('')}</div>
+      <div class="wizstep">Step ${n} of 3</div>
+      <h1>${n === 1 ? "Let's add your lights" : n === 2 ? `Hi ${first}! Where are your lights?` : 'Tell us about your display'}</h1>
+      <p class="note on-page">${n === 1 ? "It's free. Your display shows on the map once it's been checked." : n === 2 ? 'Start typing your address and pick it from the list.' : `Nearly done, ${first}.`}</p>`;
+    if (n === 3) $('#wizPicked', v).innerHTML = `<div class="wizaddr">${ICON.pin}<div><b>${esc(F.place.title)}</b><small>${esc($('#suburb', v).value.trim() || F.place.suburb || '')}</small></div>
+      <button class="linkbtn" type="button" id="wizChange">Change</button></div>`;
+    if (n === 3) $('#wizChange', v).onclick = () => goStep(2);
+    if (n === 2 && pinMap) setTimeout(() => pinMap.invalidateSize(), 60);
+    scrollTop();
+  };
+  if (wiz) {
+    goStep(1);
+    const found = $('#wizFound', v), next2 = $('#wizNext2', v);
+    onAddrChange = () => { found.innerHTML = ''; next2.hidden = false; $('#wizErr2', v).textContent = ''; };
+    $('#wizNext1', v).onclick = () => {
+      const o = owner();
+      if (!o.first || !o.last) { $('#wizErr1', v).textContent = !o.first ? 'Please type your first name.' : 'Please type your last name.'; ($('#' + (!o.first ? 'ownFirst' : 'ownLast'), v)).focus(); return; }
+      $('#wizErr1', v).textContent = ''; onAddrChange(); goStep(2);
+    };
+    ['#ownFirst', '#ownLast'].forEach(q => { $(q, v).oninput = () => { $('#wizErr1', v).textContent = ''; }; });
+    $('#wizBack2', v).onclick = () => goStep(1);
+    next2.onclick = async () => {
+      if (!F.place) { $('#wizErr2', v).textContent = 'Type your address and pick it from the list.'; box.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+      const twin = state.displays.find(o => sameAddress(o, F.place));
+      if (!twin) { goStep(3); return; }
+      // Already on the map: is it theirs?
+      next2.disabled = true; next2.textContent = 'Checking…';
+      let mine;
+      try { mine = await (await state.storeReady).claim(twin.id, owner()); }
+      catch (ex) { console.warn(ex); $('#wizErr2', v).textContent = "Couldn't check just now. Check you have signal and try again."; }
+      next2.disabled = false; next2.textContent = 'Next ›';
+      if (mine === undefined) return;
+      next2.hidden = true;
+      found.innerHTML = mine
+        ? `<div class="card welcome"><h2>Welcome back, ${esc(owner().first)}!</h2>
+            <p style="margin:0">${esc(twin.address)} is already on the map, and it's yours.</p>
+            <button class="btn go wide" type="button" id="showMine">Show my display</button></div>`
+        : `<div class="card"><h2>${esc(twin.address)} is already on the map</h2>
+            <p style="margin:0">It was added under a different name, so we can't open it here.</p>
+            <p class="note" style="margin:0">Check the spelling of your first and last name, or message us on Facebook.</p>
+            <button class="btn wide" type="button" id="fixName">‹ Change my name</button></div>`;
+      if (mine) $('#showMine', v).onclick = () => { state.add.done = false; renderAdd(); scrollTop(); };
+      else $('#fixName', v).onclick = () => goStep(1);
+      found.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+  }
+
   $('#addForm', v).onsubmit = async e => {
     e.preventDefault();
+    if (wiz && form.dataset.step !== '3') { // the keyboard's Go button on steps 1 and 2 means Next
+      if (form.dataset.step === '1') $('#wizNext1', v).click(); else if (!$('#wizNext2', v).hidden) $('#wizNext2', v).click();
+      return;
+    }
     const status = $('#addStatus', v);
     const err = (msg, el) => { status.className = 'status err'; status.textContent = msg; if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     if (!F.place) return err('Type the address and pick it from the list.', box);
@@ -1499,7 +1606,7 @@ function displayForm(v, { mode = 'new', initial = null, onSaved, onCancel }) {
       const S = await state.storeReady;
       if (mode === 'new') {
         if (F.photo) status.textContent = 'Sending your display and photo…';
-        await S.submit(entry, F.photo ? F.photo.image : null); clearToasts(); onSaved && onSaved({}); return;
+        await S.submit(entry, F.photo ? F.photo.image : null, owner()); clearToasts(); onSaved && onSaved({}); return;
       }
       const before = cleanEntry(d), after = cleanEntry(entry);
       // A new photo is checked first, like a new address; taking a photo off isn't
@@ -1546,7 +1653,15 @@ async function renderAdd() {
   }
   if (!v.querySelector('form, .mine')) v.innerHTML = '<h1>Add your Christmas lights</h1><p class="note on-page">Loading…</p>';
   let mine = [];
-  try { const S = await state.storeReady; mine = S.myDisplays ? await S.myDisplays() : []; } catch (e) { mine = []; }
+  try { const S = await state.storeReady; mine = S.myDisplays ? await S.myDisplays() : []; }
+  catch (e) {
+    // No signal (or the database is down): don't show an empty form, or people think their display has gone
+    if (state.tab !== 'add' || A.editing) return;
+    v.innerHTML = `<h1>Add your Christmas lights</h1><div class="card"><p style="margin:0"><b>Couldn't check for your display just now.</b> Check you have signal, then try again.</p>
+      <button class="btn go wide" type="button" id="addRetry">Try again</button></div>`;
+    $('#addRetry', v).onclick = () => { v.innerHTML = ''; renderAdd(); };
+    return;
+  }
   if (state.tab !== 'add' || A.editing) return;
 
   if (mine.length) {
@@ -1564,7 +1679,9 @@ async function renderAdd() {
              <button class="btn primary wide" type="button" data-mine="lightson">My lights are back on</button></div>`
           : `<div class="offbox"><button class="btn wide" type="button" data-mine="lightsoff">${ICON.moon}Lights off tonight</button>
              <p class="note" style="margin:0">Bad weather, or a problem with the lights? Tap this and drives will skip your house tonight. It turns itself back on tomorrow.</p></div>`) : ''}
-        <div class="row2"><button class="btn" type="button" data-mine="edit">Edit</button><button class="btn danger" type="button" data-mine="remove">Remove</button></div>
+        ${d.canRemove === false
+          ? `<button class="btn wide" type="button" data-mine="edit">Edit</button><p class="note" style="margin:0">To remove your display, use the phone you first added it from, or message us.</p>`
+          : `<div class="row2"><button class="btn" type="button" data-mine="edit">Edit</button><button class="btn danger" type="button" data-mine="remove">Remove</button></div>`}
         ${d.status === 'approved' ? '<a class="linkbtn" href="#map">See it on the map</a>' : ''}
       </div>`).join('') + '<p class="note on-page" style="text-align:center">Merry Christmas from Toowoomba Christmas Lights!</p>';
     $$('.mine', v).forEach(c => c.onclick = e => {
@@ -1643,8 +1760,9 @@ async function renderAdmin() {
     return;
   }
   setAdminTab(true);
-  const got = await pendingP;
+  const [got, names] = await Promise.all([pendingP, S.ownerNames ? S.ownerNames() : {}]);
   if (state.tab !== 'admin' || state.adminEditing) return;
+  const ownerLine = d => `Owner: ${names[d.id] ? esc(names[d.id]) : 'no name yet'}`;
   const loadErr = got.err || state.pendingError;
   const pending = got.list || state.pendingLive || [];
   const link = location.origin + location.pathname + '#add';
@@ -1659,7 +1777,8 @@ async function renderAdmin() {
     <h2 class="on-page" style="color:#fff">Waiting for a check (${pending.length})</h2>
     ${pending.length ? pending.map(d => `
       <div class="card pending" data-id="${esc(d.id)}">
-        <div><b style="font-size:1.2rem">${esc(d.address)}</b><div class="muted" style="font-weight:600">${esc(d.suburb)}${joined(d) ? ' · ' + joined(d) : ''}</div></div>
+        <div><b style="font-size:1.2rem">${esc(d.address)}</b><div class="muted" style="font-weight:600">${esc(d.suburb)}${joined(d) ? ' · ' + joined(d) : ''}</div>
+          <div class="ownername">${ownerLine(d)}</div></div>
         <p class="meta">${stars(d.size)} ${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'} · ${esc(d.hours)}<br>${esc(fmtDate(d.from))} to ${esc(fmtDate(d.until))}${(d.features || []).length ? '<br>' + d.features.map(f => esc(FEATURES[f] || f)).join(', ') : ''}${d.notes ? '<br>“' + esc(d.notes) + '”' : ''}</p>
         ${(() => { const twin = [...state.displays, ...pending].find(o => o.id !== d.id && nearSameSpot(o, d));
           return twin ? `<p class="pinwarn"><b>Same map spot as ${esc(twin.address)}.</b> The dot was probably left at the middle of the street. Tap Edit and drag it onto the right house before approving.</p>` : ''; })()}
@@ -1678,7 +1797,7 @@ async function renderAdmin() {
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <div class="rowopts" id="opts-${esc(d.id)}"${open ? '' : ' hidden'}>
-      <small class="rowmeta">${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${d.hours ? ' · ' + esc(d.hours) : ''}${offTonight(d) ? ' · <b>switched off tonight</b>' : ''}</small>
+      <small class="rowmeta">${ownerLine(d)}<br>${sizeName(d.size)} · ${d.viewing === 'walk' ? 'Park and walk' : 'Drive past'}${d.hours ? ' · ' + esc(d.hours) : ''}${offTonight(d) ? ' · <b>switched off tonight</b>' : ''}</small>
       ${d.thumb ? `<img class="minipic" src="${esc(d.thumb)}" alt=""><button class="linkbtn" type="button" data-nophoto="${esc(d.id)}">Remove the photo</button>` : ''}
       <span class="adminbtns">${S.update && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-edit="${esc(d.id)}">Edit</button>` : ''}${S.unapprove && !String(d.id).startsWith('s') ? `<button class="btn" type="button" data-undo="${esc(d.id)}">Undo</button>` : ''}<button class="btn danger" type="button" data-remove="${esc(d.id)}">Remove</button></span></div></li>`; }).join('') || '<li class="group">No displays on the map yet</li>'}</ul>
     <div class="card" style="margin-top:14px"><h2>Link for the Facebook post</h2><p class="note">People tap this to add their display.</p>
@@ -1936,6 +2055,7 @@ async function start() {
       if (state.tab === 'admin' && !state.adminEditing) renderAdmin();
     });
     await loadDisplays();
+    askOwnerName().catch(e => console.warn('name question', e));
     // Bring the screen up to date, unless someone is in the middle of filling something in
     const P = state.plan;
     if (state.tab === 'map' || (state.tab === 'plan' && P.step === 'form')) show(state.tab, { keepScroll: true });
@@ -1977,11 +2097,11 @@ async function latestVersion() {
 function safeToUpdate() {
   const P = state.plan;
   if (P.drive || ['results', 'route', 'drive'].includes(P.step)) return false;
-  if ($('#popup') || $('#arrival') || $('#dpop')) return false;
+  if ($('#popup') || $('#arrival') || $('#dpop') || $('#namePrompt')) return false;
   if (state.adminEditing || state.add.editing) return false;
   const f = state.tab === 'add' ? $('#view-add #addForm') : null;
   if (f) { // filling in Add my lights: only if nothing's been entered yet
-    if ($('.picked', f) || $('#notes', f)?.value || $('#linkUrl', f)?.value || $$('[aria-checked="true"], [aria-pressed="true"]', f).some(b => !b.matches('[data-view="drive"]'))) return false;
+    if ($('.picked', f) || $('#notes', f)?.value || $('#linkUrl', f)?.value || $('#ownFirst', f)?.value || $('#ownLast', f)?.value || $$('[aria-checked="true"], [aria-pressed="true"]', f).some(b => !b.matches('[data-view="drive"]'))) return false;
   }
   return true;
 }

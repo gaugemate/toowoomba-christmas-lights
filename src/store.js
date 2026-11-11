@@ -46,6 +46,11 @@ export function linkShort(href) {
   try { const u = new URL(href); return (u.hostname.replace(/^www\./, '') + u.pathname.replace(/\/$/, '') + u.search).slice(0, 60); } catch (e) { return ''; }
 }
 
+// The owner's name (security only, never shown publicly): matched ignoring capitals, extra spaces and curly apostrophes
+export const normName = v => String(v || '').replace(/[\u2018\u2019`]/g, "'").trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 81);
+const tidyName = v => String(v || '').replace(/[\u2018\u2019`]/g, "'").trim().replace(/\s+/g, ' ').slice(0, 40);
+export const ownerDoc = o => ({ name: normName(tidyName(o.first) + ' ' + tidyName(o.last)), first: tidyName(o.first), last: tidyName(o.last) });
+
 export function cleanEntry(d) {
   const s = (v, max) => String(v || '').trim().slice(0, max);
   return {
@@ -66,6 +71,9 @@ function demoStore() {
   const removed = () => new Set(LS.get('lm.demo.removed', []));
   const photos = () => LS.get('lm.demo.photos', {});
   const setPhoto = (id, image) => { const all = photos(); if (image) all[id] = image; else delete all[id]; LS.set('lm.demo.photos', all); };
+  const owners = () => LS.get('lm.demo.owners', {});
+  const setOwner = (id, o) => { const all = owners(); if (o) all[id] = o; else delete all[id]; LS.set('lm.demo.owners', all); };
+  const claims = () => new Set(LS.get('lm.demo.claims', []));
   return {
     mode: 'demo',
     async getPhoto(id) { return photos()[id] || null; },
@@ -88,27 +96,39 @@ function demoStore() {
       const gone = removed();
       return SAMPLE_DISPLAYS.filter(d => !gone.has(d.id)).concat(extra().filter(d => d.status === 'approved'));
     },
-    async submit(entry, photo) {
+    async submit(entry, photo, owner) {
       const list = extra(), id = 'u' + Date.now().toString(36);
       list.push({ ...cleanEntry(entry), id, status: 'pending', createdAt: Date.now(), mine: true });
       save(list);
       if (photo) setPhoto(id, photo);
+      if (owner) setOwner(id, ownerDoc(owner));
       return id;
     },
+    // Found on this phone by its address and the owner's name: true if the name matches (or it had none yet)
+    async claim(id, owner) {
+      const o = owners()[id], me = ownerDoc(owner);
+      if (o && o.name !== me.name) return false;
+      if (!o) setOwner(id, me);
+      LS.set('lm.demo.claims', [...claims(), id]);
+      return true;
+    },
+    async ownerNameNeeded() { const o = owners(); return extra().filter(d => d.mine && !o[d.id]); },
+    async setOwnerName(ids, owner) { ids.forEach(id => setOwner(id, ownerDoc(owner))); },
+    async ownerNames() { const o = owners(), out = {}; for (const k in o) out[k] = `${o[k].first} ${o[k].last}`; return out; },
     async isAdmin() { return true; },
     async signIn() { return true; },
     async listPending() { return extra().filter(d => d.status === 'pending'); },
     watchPending(onList) { onList(extra().filter(d => d.status === 'pending')); return () => {}; },
     async approve(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'approved' } : d))); },
     async unapprove(id) { save(extra().map(d => (d.id === id ? { ...d, status: 'pending' } : d))); },
-    async myDisplays() { return extra().filter(d => d.mine); },
+    async myDisplays() { const c = claims(); return extra().filter(d => d.mine || c.has(d.id)).map(d => ({ ...d, canRemove: !!d.mine })); },
     async update(id, entry, status) {
       const c = cleanEntry(entry); for (const k of ['thumb', 'link', 'linkTitle']) if (!(k in entry)) delete c[k];
       save(extra().map(d => (d.id === id ? { ...d, ...c, status, updatedAt: Date.now() } : d)));
     },
-    async reject(id) { save(extra().filter(d => d.id !== id)); setPhoto(id, null); },
+    async reject(id) { save(extra().filter(d => d.id !== id)); setPhoto(id, null); setOwner(id, null); },
     async remove(id) {
-      setPhoto(id, null);
+      setPhoto(id, null); setOwner(id, null);
       if (id.startsWith('s')) { const g = removed(); g.add(id); LS.set('lm.demo.removed', [...g]); }
       else save(extra().filter(d => d.id !== id));
     }
@@ -166,13 +186,21 @@ async function liveStore(cfg) {
         throw e;
       }
     },
-    async submit(entry, photo) {
+    async submit(entry, photo, owner) {
       const data = { ...cleanEntry(entry), status: 'pending', createdAt: fs.serverTimestamp() };
       const u = await phoneId();
       if (u) data.ownerUid = u.uid; else data.thumb = ''; // a photo needs this phone's ID, so it can be checked first
       for (const k of ['thumb', 'link', 'linkTitle']) if (!data[k]) delete data[k];
-      let ref;
-      try { ref = await fs.addDoc(col, data); }
+      let ref = null;
+      // The display and the owner's name go in together
+      if (u && owner) {
+        try {
+          const r = fs.doc(col), b = fs.writeBatch(db);
+          b.set(r, data); b.set(fs.doc(db, 'owners', r.id), { ...ownerDoc(owner), updatedAt: fs.serverTimestamp() });
+          await b.commit(); ref = r;
+        } catch (e) { if (e.code !== 'permission-denied') throw e; } // older database rules: send it without the name
+      }
+      if (!ref) try { ref = await fs.addDoc(col, data); }
       catch (e) {
         // Older database rules don't know about photos or ownerUid yet: send it without them, so nobody is ever turned away
         if (e.code !== 'permission-denied' || (!data.ownerUid && !data.thumb && !data.link)) throw e;
@@ -222,20 +250,75 @@ async function liveStore(cfg) {
       }
       await fs.setDoc(fs.doc(db, 'archive', arch), { season: arch, displays: total, clearedAt: fs.serverTimestamp(), newSeason: String(year) }, { merge: true });
       let done = 0;
-      for (const part of chunks(all, 200)) {
+      for (const part of chunks(all, 150)) {
         const b = fs.writeBatch(db);
-        part.forEach(d => { b.delete(d.ref); b.delete(fs.doc(db, 'photos', d.id)); });
+        part.forEach(d => { b.delete(d.ref); b.delete(fs.doc(db, 'photos', d.id)); b.delete(fs.doc(db, 'owners', d.id)); });
         await b.commit();
         done += part.length; onProgress(done, total);
       }
+      try { // owners' "found it on another phone" records
+        for (const part of chunks((await fs.getDocs(fs.collection(db, 'claims'))).docs, 400)) {
+          const b = fs.writeBatch(db); part.forEach(d => b.delete(d.ref)); await b.commit();
+        }
+      } catch (e) { console.warn('claims not cleared', e.code || e); }
       LS.set('lm.cache.approved', []);
       return { archived: total };
     },
+    // This phone's displays: the ones it added (which it can remove), and ones it found by address and name.
+    // Throws if the database can't be reached, so the page can say so instead of showing an empty form.
     async myDisplays() {
       await authReady;
       const u = auth.currentUser;
       if (!u) return [];
-      try { return rows(await fs.getDocs(fs.query(col, fs.where('ownerUid', '==', u.uid)))); } catch (e) { return []; }
+      const snap = await fs.getDocs(fs.query(col, fs.where('ownerUid', '==', u.uid)));
+      // No signal: the database answers from this phone's memory, which may simply be empty. That's "couldn't check", not "none".
+      if (snap.metadata.fromCache && snap.empty) throw new Error("Can't reach the database right now");
+      const own = rows(snap);
+      const found = [];
+      try {
+        const cs = rows(await fs.getDocs(fs.query(fs.collection(db, 'claims'), fs.where('uid', '==', u.uid))));
+        for (const c of cs) {
+          if (own.some(d => d.id === c.displayId) || found.some(d => d.id === c.displayId)) continue;
+          try { const s = await fs.getDoc(fs.doc(db, 'displays', c.displayId)); if (s.exists()) found.push({ id: s.id, ...s.data() }); }
+          catch (e) { if (e.code !== 'permission-denied') throw e; } // the name was changed since: no longer theirs
+        }
+      } catch (e) { if (e.code !== 'permission-denied') throw e; } // older database rules
+      return [...own.map(d => ({ ...d, canRemove: true })), ...found.map(d => ({ ...d, canRemove: false }))];
+    },
+    // "This display is mine": true if the name matches the owner's (or it had no name yet, and theirs is saved)
+    async claim(id, owner) {
+      const u = await phoneId();
+      if (!u) throw new Error('No sign-in on this phone');
+      const me = ownerDoc(owner), cref = fs.doc(db, 'claims', u.uid + '_' + id);
+      const c = { uid: u.uid, displayId: id, name: me.name, at: fs.serverTimestamp() };
+      try { await fs.setDoc(cref, c); return true; } catch (e) { if (e.code !== 'permission-denied') throw e; }
+      try {
+        const b = fs.writeBatch(db);
+        b.set(cref, c); b.set(fs.doc(db, 'owners', id), { ...me, updatedAt: fs.serverTimestamp() });
+        await b.commit(); return true;
+      } catch (e) { if (e.code !== 'permission-denied') throw e; return false; }
+    },
+    // Displays this phone added that have no owner's name yet (asked once). Never signs anyone in.
+    async ownerNameNeeded() {
+      await authReady;
+      const u = auth.currentUser;
+      if (!u) return [];
+      try {
+        const own = rows(await fs.getDocs(fs.query(col, fs.where('ownerUid', '==', u.uid))));
+        const need = [];
+        for (const d of own) if (!(await fs.getDoc(fs.doc(db, 'owners', d.id))).exists()) need.push(d);
+        return need;
+      } catch (e) { return []; } // no signal, or older database rules: don't ask now
+    },
+    async setOwnerName(ids, owner) {
+      const b = fs.writeBatch(db), me = ownerDoc(owner);
+      ids.forEach(id => b.set(fs.doc(db, 'owners', id), { ...me, updatedAt: fs.serverTimestamp() }));
+      await b.commit();
+    },
+    // Admin: each display's owner's name
+    async ownerNames() {
+      try { const out = {}; (await fs.getDocs(fs.collection(db, 'owners'))).docs.forEach(d => { out[d.id] = `${d.data().first} ${d.data().last}`; }); return out; }
+      catch (e) { return {}; }
     },
     async update(id, entry, status) {
       const data = { ...cleanEntry(entry), status, updatedAt: fs.serverTimestamp() };
@@ -302,8 +385,12 @@ async function liveStore(cfg) {
       return out;
     },
     // Removing a display takes its photo with it (the photo first, while this phone can still prove it's theirs)
-    async reject(id) { await fs.deleteDoc(fs.doc(db, 'photos', id)).catch(() => {}); await fs.deleteDoc(fs.doc(db, 'displays', id)); },
-    async remove(id) { await fs.deleteDoc(fs.doc(db, 'photos', id)).catch(() => {}); await fs.deleteDoc(fs.doc(db, 'displays', id)); }
+    async reject(id) { await this.remove(id); },
+    async remove(id) {
+      await fs.deleteDoc(fs.doc(db, 'photos', id)).catch(() => {});
+      await fs.deleteDoc(fs.doc(db, 'owners', id)).catch(() => {}); // the owner's name goes with it
+      await fs.deleteDoc(fs.doc(db, 'displays', id));
+    }
   };
 }
 
@@ -314,7 +401,7 @@ function offlineStore() {
   return {
     mode: 'offline',
     async listApproved() { return LS.get('lm.cache.approved', []); },
-    async myDisplays() { return []; },
+    myDisplays: fail, claim: fail, async ownerNameNeeded() { return []; }, setOwnerName: fail, async ownerNames() { return {}; },
     update: fail, getPhoto: async () => null, getDisplay: async () => undefined, setOffTonight: fail, setPhoto: fail, removePhoto: fail, startNewYear: fail,
     submit: fail, signIn: fail, listPending: fail, approve: fail, reject: fail, remove: fail,
     async isAdmin() { return false; },

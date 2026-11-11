@@ -454,3 +454,30 @@ nav.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-
 .dpop-foot .seenbtn{padding:8px 16px;white-space:nowrap}
 .dpop-foot .btn.go{white-space:nowrap;min-width:0}
 .sheet p{overflow-wrap:anywhere}
+
+/* Add my lights: the 3-step wizard (1 name, 2 address, 3 the rest) */
+.wizhead{margin:2px 0 6px}
+.wizhead h1{margin:2px 0 4px}
+.wizhead .note{margin:0}
+.wizdots{display:flex;gap:8px;margin-bottom:10px}
+.wizdots i{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.25)}
+.wizdots i.done{background:var(--gold-primary)}
+.wizdots i.now{background:#fff}
+.wizstep{color:var(--gold-primary);font-weight:800;font-size:.95rem;letter-spacing:.04em;text-transform:uppercase}
+form.wiz:not([data-step="3"]) .view > :not(.w1):not(.w2){display:none}
+form.wiz[data-step="1"] .w2, form.wiz:not([data-step="1"]) .w1, form.wiz[data-step="3"] .w2{display:none}
+form.wiz .btn.w1, form.wiz .btn.w2{margin:0}
+.w1 input.big, .nameprompt input.big{font-size:1.15rem;min-height:54px}
+.w1 .status:empty, .w2 .status:empty, .nameprompt .status:empty{display:none}
+.wizaddr{display:flex;align-items:center;gap:10px}
+.wizaddr > svg{width:26px;height:26px;color:var(--green-primary);flex:none}
+.wizaddr b{display:block;font-size:1.1rem}.wizaddr small{display:block;color:var(--muted);font-weight:500}
+.wizaddr .linkbtn{margin-left:auto}
+.card.welcome{border:3px solid var(--gold-primary);text-align:center}
+.card.welcome h2{margin:0}
+#wizFound:empty{display:none}
+.ownername{font-weight:700;color:var(--green-primary);font-size:.95rem}
+/* The one-off "your name" question */
+.nameprompt{position:fixed;inset:0;z-index:4800;background:rgba(5,25,18,.82);display:flex;align-items:flex-start;justify-content:center;padding:calc(18px + env(safe-area-inset-top,0px)) 16px 16px;overflow:auto}
+.nameprompt .card{width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px}
+.nameprompt h2{margin:0}
