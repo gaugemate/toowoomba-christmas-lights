@@ -1205,12 +1205,11 @@ const thumbHTML = d => (d.thumb ? `<img class="lthumb" src="${esc(d.thumb)}" alt
 
 function listHTML(list) {
   if (!list.length) return '<li class="bhead"><h3>No displays yet</h3></li>';
-  const pics = list.some(d => d.thumb); // photo column only once some displays have photos
-  const by = new Map();
+  const by = new Map(); // no photos in this list: the photo shows on the display's card
   for (const d of list) { if (!by.has(d.suburb)) by.set(d.suburb, []); by.get(d.suburb).push(d); }
   return [...by.keys()].sort().map(s => `<li class="bhead"><h3>${esc(s)}</h3><span>${by.get(s).length} display${by.get(s).length > 1 ? 's' : ''}</span></li>` + by.get(s).sort((a, b) => b.size - a.size).map(d => {
     const st = listStatus(d);
-    return `<li><button class="brow${pics ? ' withpic' : ''}" type="button" data-id="${esc(d.id)}"><span class="kdot ${st.on ? 'on' : 'off'}" aria-hidden="true"></span>${pics ? thumbHTML(d) : ''}<span><b>${esc(d.address)}</b><small>${esc(st.text)} · ${sizeName(d.size)}</small></span>${seen.has(d.id) ? `<span class="seentick" aria-label="Seen">${ICON.tick}</span>` : `<span class="stars">${stars(d.size)}</span>`}</button></li>`;
+    return `<li><button class="brow" type="button" data-id="${esc(d.id)}"><span class="kdot ${st.on ? 'on' : 'off'}" aria-hidden="true"></span><span><b>${esc(d.address)}</b><small>${esc(st.text)} · ${sizeName(d.size)}</small></span>${seen.has(d.id) ? `<span class="seentick" aria-label="Seen">${ICON.tick}</span>` : `<span class="stars">${stars(d.size)}</span>`}</button></li>`;
   }).join('')).join('');
 }
 // The red or grey dot (same as the map) and a few words for one display in the All lights list
