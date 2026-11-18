@@ -113,6 +113,11 @@ export function navigateUrl(to) {
 export function appleMapsUrl(to) {
   return `https://maps.apple.com/?daddr=${to.lat},${to.lng}&dirflg=d`;
 }
+// Waze: drive to the map position
+export function wazeUrl(to) {
+  return `https://waze.com/ul?ll=${to.lat},${to.lng}&navigate=yes`;
+}
+export const isAndroid = () => /Android/i.test(navigator.userAgent);
 export const isIPhone = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 // Google Maps takes only a few stops per link on a phone, so long drives are split into legs of 4 stops

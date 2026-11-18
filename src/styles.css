@@ -481,3 +481,21 @@ form.wiz .btn.w1, form.wiz .btn.w2{margin:0}
 .nameprompt{position:fixed;inset:0;z-index:4800;background:rgba(5,25,18,.82);display:flex;align-items:flex-start;justify-content:center;padding:calc(18px + env(safe-area-inset-top,0px)) 16px 16px;overflow:auto}
 .nameprompt .card{width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px}
 .nameprompt h2{margin:0}
+
+/* "Open maps": which map app, asked once */
+.mapchoice{position:fixed;inset:0;z-index:4700;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px}
+.mapchoice .box{background:var(--surface);color:var(--ink);border-radius:24px;width:100%;max-width:400px;padding:22px 18px 14px;box-shadow:0 14px 40px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:12px;animation:mappop .2s ease-out}
+@keyframes mappop{from{transform:scale(.92);opacity:.4}to{transform:none;opacity:1}}
+.mapchoice h2{margin:0;font-size:1.35rem;text-align:center}
+.mapchoice p{margin:0;text-align:center;color:var(--muted);font-size:.98rem}
+.mapopt{display:flex;align-items:center;gap:14px;width:100%;min-height:64px;padding:8px 14px;border:2px solid var(--line);border-radius:16px;background:var(--surface);font:inherit;font-size:1.15rem;font-weight:800;color:var(--ink);text-align:left;cursor:pointer}
+.mapopt:active{border-color:var(--green-primary);background:var(--green-light)}
+.mapopt .mi{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none}
+.mapopt .chev{margin-left:auto;color:var(--green-primary);font-size:1.6rem;font-weight:700}
+.mapchoice .cancel{border:0;background:none;font:inherit;font-weight:700;color:var(--green-primary);font-size:1.05rem;padding:10px;text-decoration:underline;cursor:pointer}
+.mapsnote{margin:0;text-align:center;font-size:.9rem;color:var(--muted)}
+.mapsnote:empty{display:none}
+.mapschange{border:0;background:none;padding:4px 2px;font:inherit;font-weight:700;color:var(--green-primary);text-decoration:underline;cursor:pointer}
+.dpop-foot .mapsnote{grid-column:1 / -1;margin-top:-4px}
+.view.drive .mapsnote{color:#e3f1e7}
+.view.drive .mapschange{color:var(--gold-primary)}

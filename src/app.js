@@ -41,6 +41,65 @@ const ICON = {
   picture: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
 };
+// ---------- "Open maps": Google Maps, Apple Maps or Waze, asked the first time and remembered on this phone ----------
+const MAPS_KEY = 'tcl.mapsApp';
+const MAPS = {
+  google: { name: 'Google Maps', url: to => svc.navigateUrl(to),
+    icon: '<span class="mi" style="background:#e8f0fe"><svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7z" fill="#ea4335"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg></span>' },
+  apple: { name: 'Apple Maps', url: to => svc.appleMapsUrl(to),
+    icon: '<span class="mi" style="background:#eef3f7"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2f7cf6"/><path d="M16.5 7.5 10.7 10.7 7.5 16.5l5.8-3.2z" fill="#fff"/></svg></span>' },
+  waze: { name: 'Waze', url: to => svc.wazeUrl(to),
+    icon: '<span class="mi" style="background:#e6f7fc"><svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M12 4c4.4 0 8 3 8 7s-3.6 7-8 7c-1 0-2-.2-2.9-.5L6 19l.8-3A6.8 6.8 0 0 1 4 11c0-4 3.6-7 8-7z" fill="#33ccff"/><circle cx="9.5" cy="10.5" r="1.1" fill="#16323f"/><circle cx="14.5" cy="10.5" r="1.1" fill="#16323f"/><path d="M9.5 13.3c1.4 1.2 3.6 1.2 5 0" stroke="#16323f" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg></span>' }
+};
+// Android phones don't have Apple Maps
+const mapsChoices = () => Object.keys(MAPS).filter(k => k !== 'apple' || !svc.isAndroid());
+function mapsApp() {
+  let k = '';
+  try { k = localStorage.getItem(MAPS_KEY) || ''; } catch (e) { /* private mode: ask each time */ }
+  return mapsChoices().includes(k) ? k : '';
+}
+const mapsTarget = d => ({ address: d.address || '', suburb: d.suburb || '', lat: d.lat, lng: d.lng });
+// The button: a normal link to their map once they've chosen; the first tap asks which map
+function mapsButton(d, cls = 'btn go wide', label = `${ICON.nav}Open maps`) {
+  const t = mapsTarget(d), k = mapsApp() || 'google';
+  return `<a class="${cls} mapsbtn" href="${esc(MAPS[k].url(t))}" target="_blank" rel="noopener" data-maps="${esc(JSON.stringify(t))}">${label}</a>`;
+}
+const mapsNoteInner = () => (mapsApp() ? `Opens in ${MAPS[mapsApp()].name} · <button type="button" class="mapschange">Change</button>` : '');
+const mapsNote = () => `<p class="mapsnote">${mapsNoteInner()}</p>`;
+// After choosing: every Open maps button on the screen now goes to that map
+function refreshMaps() {
+  const k = mapsApp() || 'google';
+  $$('a.mapsbtn').forEach(a => { try { a.href = MAPS[k].url(JSON.parse(a.dataset.maps)); } catch (e) { /* leave it */ } });
+  $$('.mapsnote').forEach(p => { p.innerHTML = mapsNoteInner(); });
+}
+function closeMapsChoice() { const o = $('#mapsChoice'); if (o) o.remove(); }
+function chooseMaps(onPick) {
+  closeMapsChoice();
+  const o = document.createElement('div');
+  o.id = 'mapsChoice'; o.className = 'mapchoice'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Which map would you like to use?');
+  o.innerHTML = `<div class="box"><h2>Which map would you like to use?</h2><p>We'll remember your choice for next time.</p>
+    ${mapsChoices().map(k => `<button type="button" class="mapopt" data-app="${k}">${MAPS[k].icon}${MAPS[k].name}<span class="chev" aria-hidden="true">›</span></button>`).join('')}
+    <button type="button" class="cancel">Cancel</button></div>`;
+  document.body.append(o);
+  o.onclick = e => {
+    if (e.target === o || e.target.closest('.cancel')) { o.remove(); return; }
+    const b = e.target.closest('[data-app]');
+    if (!b) return;
+    try { localStorage.setItem(MAPS_KEY, b.dataset.app); } catch (x) { /* private mode */ }
+    o.remove(); refreshMaps();
+    if (onPick) onPick(b.dataset.app);
+  };
+}
+// One listener for every Open maps button and Change link, wherever they are (cards, full view, the drive)
+document.addEventListener('click', e => {
+  if (e.target.closest('.mapschange')) { e.preventDefault(); chooseMaps(); return; }
+  const a = e.target.closest('a.mapsbtn');
+  if (!a || mapsApp()) return; // already chosen: the link simply opens their map
+  e.preventDefault();
+  let t; try { t = JSON.parse(a.dataset.maps); } catch (x) { return; }
+  chooseMaps(k => { window.open(MAPS[k].url(t), '_blank', 'noopener'); }); // opened straight from the tap, so phones allow it
+}, true);
+
 // A white card with a round icon and a heading (the spec's content card)
 const cardHead = (icon, title, extra = '') => `<div class="card-heading"><span class="card-icon">${icon}</span><h2>${title}</h2>${extra}</div>`;
 
@@ -705,7 +764,7 @@ async function askOwnerName() {
 }
 // The pop-up card of one display (All lights page)
 function closeDisplayPop() { const o = $('#dpop'); if (o) o.remove(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDisplayPop(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { if ($('#mapsChoice')) closeMapsChoice(); else closeDisplayPop(); } });
 
 /* ---------- the drive: the app guides you turn by turn ---------- */
 const ARROWS = {
@@ -987,8 +1046,9 @@ function renderDrive(v) {
     </div>
     <div class="row2">
       <button class="btn" type="button" id="skipStop">${t.kind === 'home' ? 'Finish here' : 'Skip this stop'}</button>
-      <a class="btn" href="${svc.navigateUrl(t.d)}" target="_blank" rel="noopener">Google Maps</a>
+      ${mapsButton(t.d, 'btn', 'Open maps')}
     </div>
+    ${mapsNote()}
     <button class="btn wide" type="button" id="voiceBtn" aria-pressed="${D.voice}">${D.voice ? '🔊 Voice is on' : '🔇 Voice is off'}</button>`;
   $('#endDrive', v).onclick = endDrive;
   $('#skipStop', v).onclick = () => (t.kind === 'home' ? endDriveDone() : advance());
@@ -1009,8 +1069,8 @@ function renderDriveManual(v) {
     ${P.drive.denied ? '<p class="estimate">Location is turned off for this app, so it can\'t guide you or tell when you\'ve arrived. Your maps app will do the directions; come back and tap Next stop at each one.</p>' : ''}
     <div class="card"><p class="where">${esc(d.address)}</p>
       ${t.kind === 'stop' ? `<div class="muted" style="font-weight:700;font-size:1.15rem">${esc(d.suburb)}</div><div class="sz">${dispTags(d)}</div>${d.notes ? `<p style="margin:0;font-size:1.1rem">${esc(d.notes)}</p>` : ''}` : ''}</div>
-    <a class="btn go wide" href="${svc.navigateUrl(d)}" target="_blank" rel="noopener">${ICON.nav}Directions</a>
-    ${svc.isIPhone() ? `<a class="btn wide" href="${svc.appleMapsUrl(d)}" target="_blank" rel="noopener">Use Apple Maps instead</a>` : ''}
+    ${mapsButton(d)}
+    ${mapsNote()}
     <div class="row2"><button class="btn" type="button" id="prevStop" ${k === 0 ? 'disabled' : ''}>‹ Back</button>
       <button class="btn" type="button" id="nextStop" style="font-weight:800">${t.kind === 'home' ? 'Finish' : 'Next stop ›'}</button></div>`;
   $('#endDrive', v).onclick = endDrive;
@@ -1130,8 +1190,8 @@ function renderMapTab() {
           ${linkButton(d)}
           ${d.notes ? `<p class="dnotes">${esc(d.notes)}</p>` : ''}
         </div>
-        <div class="dpop-foot"><a class="btn go" href="${svc.navigateUrl(d)}" target="_blank" rel="noopener">${ICON.nav}Directions</a>
-          <button class="btn seenbtn" type="button" id="seenBtn" aria-pressed="${seen.has(d.id)}">${seenBtn()}</button></div>
+        <div class="dpop-foot">${mapsButton(d, 'btn go')}
+          <button class="btn seenbtn" type="button" id="seenBtn" aria-pressed="${seen.has(d.id)}">${seenBtn()}</button>${mapsNote()}</div>
       </div>`;
       document.body.append(s);
       $('.dpop-close', s).onclick = closeDisplayPop;
@@ -1147,7 +1207,7 @@ function renderMapTab() {
       ${d.notes ? `<p style="margin:0">${esc(d.notes)}</p>` : ''}
       ${whyOff(d) ? `<p class="offline-why"><span class="kdot off"></span><span><b>Off tonight.</b> ${esc(whyOff(d))}</span></p>` : ''}
       ${d.hours ? `<p class="note">Lights on ${esc(d.hours)}</p>` : ''}
-      <a class="btn go wide" href="${svc.navigateUrl(d)}" target="_blank" rel="noopener">${ICON.nav}Directions</a>
+      ${mapsButton(d)}${mapsNote()}
       <button class="btn wide seenbtn" type="button" id="seenBtn" aria-pressed="${seen.has(d.id)}">${seenBtn()}</button></div>`;
     if (!pop) $('.x', s).onclick = () => { s.innerHTML = ''; };
     $('#seenBtn', s).onclick = e => {
@@ -1958,7 +2018,7 @@ function fitNumbers(root = document) {
 new MutationObserver(() => requestAnimationFrame(() => fitNumbers())).observe(document.querySelector('main'), { childList: true, subtree: true });
 
 function show(tab, { keepScroll = false } = {}) {
-  closePopup(); closeFullMap(); closeDisplayPop();
+  closePopup(); closeFullMap(); closeDisplayPop(); closeMapsChoice();
   if (tab !== 'admin') state.adminEditing = false;
   if (tab !== 'map') state.near = null;
   if (!['plan', 'map', 'add', 'admin'].includes(tab)) tab = 'plan';
@@ -2097,7 +2157,7 @@ async function latestVersion() {
 function safeToUpdate() {
   const P = state.plan;
   if (P.drive || ['results', 'route', 'drive'].includes(P.step)) return false;
-  if ($('#popup') || $('#arrival') || $('#dpop') || $('#namePrompt')) return false;
+  if ($('#popup') || $('#arrival') || $('#dpop') || $('#namePrompt') || $('#mapsChoice')) return false;
   if (state.adminEditing || state.add.editing) return false;
   const f = state.tab === 'add' ? $('#view-add #addForm') : null;
   if (f) { // filling in Add my lights: only if nothing's been entered yet
